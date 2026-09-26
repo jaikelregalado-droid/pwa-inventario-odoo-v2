@@ -33,7 +33,9 @@ import { fetchQuants, fetchCategories, fetchLocations, getDemoFVGrupoData, ensur
 import {
   subscribeToAuditSession,
   broadcastCountUpdate,
-  getSavedSupabaseSettings
+  getSavedSupabaseSettings,
+  fetchSessionCountsFromSupabase,
+  updateSessionCategoryInSupabase
 } from './lib/supabase';
 import { exportAuditToExcel } from './lib/exportExcel';
 import { sound } from './lib/audio';
@@ -109,12 +111,18 @@ export default function App() {
   const [showRealtimeModal, setShowRealtimeModal] = useState<boolean>(false);
   const [showCameraScanner, setShowCameraScanner] = useState<boolean>(false);
 
-  // Guardar sesión en localStorage
+  // Guardar sesión en localStorage para mantener al auditor dentro aunque recargue
   useEffect(() => {
     if (session) {
       localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(session));
+      localStorage.setItem('odoo_audit_active_pin', session.pin);
+      if (session.id) {
+        localStorage.setItem('odoo_audit_session_id', session.id);
+      }
     } else {
       localStorage.removeItem(STORAGE_SESSION_KEY);
+      localStorage.removeItem('odoo_audit_active_pin');
+      localStorage.removeItem('odoo_audit_session_id');
     }
   }, [session]);
 
@@ -153,6 +161,7 @@ export default function App() {
   };
 
   // Cargar datos de Odoo o Demo filtrados obligatoriamente por categoría sin truncar a 500
+  // y recuperar el estado actual de conteos desde Supabase
   const loadInventoryData = async (
     cfg: OdooConnectionConfig,
     locId?: number,
@@ -182,6 +191,31 @@ export default function App() {
 
       // Consulta de 100% de productos filtrados por categ_id sin truncar a 500
       const quantsData = await fetchQuants(cfg, locId, targetCatId);
+
+      // Recuperar el estado actual del inventario y los conteos realizados por otros auditores desde Supabase
+      const activePin = session?.pin || localStorage.getItem('odoo_audit_active_pin');
+      if (activePin) {
+        try {
+          const remoteCounts = await fetchSessionCountsFromSupabase(activePin);
+          if (remoteCounts && remoteCounts.length > 0) {
+            const countsMap = new Map(remoteCounts.map((c) => [c.quantId, c]));
+            for (const item of quantsData) {
+              const remote = countsMap.get(item.id);
+              if (remote) {
+                item.countedQuantity = remote.countedQuantity;
+                item.difference = remote.countedQuantity - item.quantity;
+                item.lastAuditedBy = remote.auditorName;
+                item.lastAuditedAt = remote.timestamp;
+                if (remote.photoUrl) item.photoUrl = remote.photoUrl;
+                if (remote.notes) item.notes = remote.notes;
+              }
+            }
+          }
+        } catch (supErr) {
+          console.warn('Aviso: no se pudieron sincronizar conteos remotos iniciales:', supErr);
+        }
+      }
+
       setItems(quantsData);
 
       if (quantsData.length === 0) {
@@ -232,6 +266,8 @@ export default function App() {
     setSession(updatedSession);
     setIsCategoryModalOpen(false);
     sound.playSuccess();
+    // Actualizar categoría en Supabase para sincronizar a otros auditores
+    updateSessionCategoryInSupabase(updatedSession.pin, cat.id, cat.name);
     loadInventoryData(odooConfig, updatedSession.locationId, isDemoMode, cat.id);
   };
 
@@ -457,11 +493,16 @@ export default function App() {
             setOdooConfig(config);
             setSession(newSession);
             setItems([]); // Limpiar la lista anterior explícitamente
-            // 1. Flujo de Selección de Categoría Obligatoria:
-            // Al iniciar sesión tras validar el PIN, NO cargar lista general de productos de inmediato.
-            // Cargar categorías y abrir el modal obligatorio para que el auditor elija su área.
-            loadCategoriesOnly(config, isDemo);
-            setIsCategoryModalOpen(true);
+
+            // Si la sesión ya tiene categoría configurada en Supabase (ej. creada previamente por el Lead)
+            // cargar directamente el inventario con los conteos de otros auditores
+            if (newSession.categoryId) {
+              loadInventoryData(config, newSession.locationId, isDemo, newSession.categoryId);
+            } else {
+              // Si aún no tiene categoría, abrir el modal obligatorio de selección
+              loadCategoriesOnly(config, isDemo);
+              setIsCategoryModalOpen(true);
+            }
           }}
           savedConfig={odooConfig || undefined}
         />

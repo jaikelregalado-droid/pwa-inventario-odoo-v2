@@ -56,11 +56,13 @@ export interface QuantItem {
 }
 
 export interface AuditSession {
+  id?: string;                    // ID único de sesión en Supabase
   pin: string;                    // PIN de 4 dígitos
   auditorName: string;            // Nombre del auditor en el dispositivo
   role: 'lead' | 'auditor';
   createdAt: string;
   companyName: string;
+  companyId?: number;
   locationName: string;
   locationId?: number;
   categoryId?: number;

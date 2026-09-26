@@ -22,7 +22,14 @@ import {
 } from 'lucide-react';
 import { OdooConnectionConfig, OdooCompany, OdooLocation, OdooCategory, AuditSession } from '../types';
 import { sanitizeOdooUrl, authenticateOdoo, fetchLocations, fetchCategories, getDemoFVGrupoData, getCachedUid } from '../lib/odoo';
-import { generateSessionPin, getSavedSupabaseSettings, saveSupabaseSettings, SupabaseSettings } from '../lib/supabase';
+import {
+  generateSessionPin,
+  getSavedSupabaseSettings,
+  saveSupabaseSettings,
+  checkSessionExistsInSupabase,
+  registerSessionInSupabase,
+  SupabaseSettings
+} from '../lib/supabase';
 import { sound } from '../lib/audio';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -115,6 +122,9 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
     localStorage.getItem('odoo_auditor_name') || 'Auditor Piso 1'
   );
   const [joinPin, setJoinPin] = useState<string>('');
+  const [isCheckingPin, setIsCheckingPin] = useState<boolean>(false);
+  const [sessionNotFoundState, setSessionNotFoundState] = useState<{ pin: string } | null>(null);
+  const [customPin, setCustomPin] = useState<string | null>(null);
 
   // Configuración de Supabase opcional
   const [showSupabaseSettings, setShowSupabaseSettings] = useState<boolean>(false);
@@ -208,28 +218,31 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
     sound.playSuccess();
   };
 
-  // Crear Sesión Nueva
-  const handleStartNewSession = () => {
+  // Crear Sesión Nueva (Lead)
+  const handleStartNewSession = async () => {
     if (!auditorName.trim()) {
       setAuthError('Por favor ingresa tu nombre de auditor.');
       return;
     }
 
     localStorage.setItem('odoo_auditor_name', auditorName.trim());
-    const pin = generateSessionPin();
+    const pin = customPin || generateSessionPin();
+    const sessionId = `session_${pin}_${Date.now()}`;
 
     const selectedComp =
       companies.find((c) => c.id === selectedCompanyId)?.name || 'FV GRUPO EMPRESARIAL, C.A.';
     const selectedLoc =
       locations.find((l) => l.id === selectedLocationId)?.complete_name ||
-      'Todas las ubicaciones';
+      'WH/Existencias';
 
     const session: AuditSession = {
+      id: sessionId,
       pin,
       auditorName: auditorName.trim(),
       role: 'lead',
       createdAt: new Date().toISOString(),
       companyName: selectedComp,
+      companyId: selectedCompanyId || 1,
       locationName: selectedLoc,
       locationId: selectedLocationId,
     };
@@ -247,12 +260,18 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
       uid: authenticatedUid || getCachedUid() || undefined,
     };
 
+    localStorage.setItem('odoo_audit_active_pin', pin);
+    localStorage.setItem('odoo_audit_session_id', sessionId);
+
+    // Registrar sesión en Supabase para permitir que otros auditores se unan
+    await registerSessionInSupabase(session, finalConfig);
+
     sound.playSuccess();
     onSessionStarted(session, finalConfig, false);
   };
 
   // Unirse a Sesión Existente mediante PIN
-  const handleJoinSession = () => {
+  const handleJoinSession = async () => {
     if (!auditorName.trim()) {
       setAuthError('Por favor ingresa tu nombre de auditor.');
       return;
@@ -264,32 +283,66 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
       return;
     }
 
-    localStorage.setItem('odoo_auditor_name', auditorName.trim());
+    setAuthError(null);
+    setSessionNotFoundState(null);
+    setIsCheckingPin(true);
 
-    const session: AuditSession = {
-      pin: cleanPin,
-      auditorName: auditorName.trim(),
-      role: 'auditor',
-      createdAt: new Date().toISOString(),
-      companyName: 'FV GRUPO EMPRESARIAL, C.A.',
-      locationName: 'Sesión Compartida',
-    };
+    try {
+      // 1. Al ingresar un PIN de sesión en la PWA, realizar primero una consulta a Supabase para verificar si la sesión ya existe
+      const checkResult = await checkSessionExistsInSupabase(cleanPin);
 
-    const effectiveProxy = isCustomProxy ? (customProxyUrl.trim() || 'direct') : proxyUrl;
+      // 2. Si la sesión existe:
+      if (checkResult.exists) {
+        localStorage.setItem('odoo_auditor_name', auditorName.trim());
+        localStorage.setItem('odoo_audit_active_pin', cleanPin);
+        const resolvedSessionId = checkResult.session?.id || `session_${cleanPin}`;
+        localStorage.setItem('odoo_audit_session_id', resolvedSessionId);
 
-    const finalConfig: OdooConnectionConfig = {
-      url: sanitizeOdooUrl(url),
-      db: db.trim(),
-      username: username.trim(),
-      apiKey: apiKey.trim(),
-      proxyUrl: effectiveProxy,
-      companyId: selectedCompanyId || 1,
-      companyName: 'FV GRUPO EMPRESARIAL, C.A.',
-      uid: authenticatedUid || getCachedUid() || undefined,
-    };
+        const session: AuditSession = {
+          id: resolvedSessionId,
+          pin: cleanPin,
+          auditorName: auditorName.trim(),
+          role: 'auditor',
+          createdAt: checkResult.session?.createdAt || new Date().toISOString(),
+          companyName: checkResult.session?.companyName || 'FV GRUPO EMPRESARIAL, C.A.',
+          companyId: checkResult.session?.companyId || selectedCompanyId || 1,
+          locationName: checkResult.session?.locationName || 'WH/Existencias',
+          locationId: checkResult.session?.locationId || selectedLocationId,
+          categoryId: checkResult.session?.categoryId,
+          categoryName: checkResult.session?.categoryName,
+        };
 
-    sound.playSuccess();
-    onSessionStarted(session, finalConfig, false);
+        const effectiveProxy = isCustomProxy ? (customProxyUrl.trim() || 'direct') : proxyUrl;
+
+        const finalConfig: OdooConnectionConfig = {
+          url: sanitizeOdooUrl(url),
+          db: db.trim(),
+          username: username.trim(),
+          apiKey: apiKey.trim(),
+          proxyUrl: effectiveProxy,
+          companyId: session.companyId || selectedCompanyId || 1,
+          companyName: session.companyName,
+          uid: authenticatedUid || getCachedUid() || undefined,
+        };
+
+        sound.playSuccess();
+        onSessionStarted(session, finalConfig, false);
+        return;
+      }
+
+      // 3. Si la sesión no existe, notificar y permitir crearla normalmente
+      sound.playError();
+      setSessionNotFoundState({ pin: cleanPin });
+      setAuthError(
+        `La sesión con PIN ${cleanPin} no fue encontrada en Supabase. Verifica el PIN o crea la sesión si eres el supervisor.`
+      );
+    } catch (err: any) {
+      console.error('Error al verificar sesión en Supabase:', err);
+      sound.playError();
+      setAuthError(`Error al consultar Supabase: ${err.message || String(err)}`);
+    } finally {
+      setIsCheckingPin(false);
+    }
   };
 
   // Iniciar en Modo Demo (FV GRUPO EMPRESARIAL, C.A.)
@@ -413,20 +466,72 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               inputMode="numeric"
               maxLength={4}
               value={joinPin}
-              onChange={(e) => setJoinPin(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => {
+                setJoinPin(e.target.value.replace(/\D/g, ''));
+                if (sessionNotFoundState) setSessionNotFoundState(null);
+                if (authError) setAuthError(null);
+              }}
               placeholder="0000"
-              className="w-full text-center text-4xl font-mono font-black tracking-widest py-3 rounded-2xl bg-slate-950 border-2 border-indigo-500/70 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20 text-white outline-none"
+              disabled={isCheckingPin}
+              className="w-full text-center text-4xl font-mono font-black tracking-widest py-3 rounded-2xl bg-slate-950 border-2 border-indigo-500/70 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20 text-white outline-none disabled:opacity-50"
             />
           </div>
+
+          {/* Tarjeta de Sesión No Encontrada con Opción de Creación */}
+          {sessionNotFoundState && (
+            <div className="p-4 rounded-2xl bg-amber-950/60 border border-amber-600/50 text-amber-200 text-xs space-y-3 animate-in fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block text-amber-100 font-bold">
+                    La sesión con PIN {sessionNotFoundState.pin} no existe en Supabase.
+                  </strong>
+                  <p className="text-[11px] text-amber-300/90 mt-0.5 leading-relaxed">
+                    Aún no ha sido iniciada por otro auditor o el PIN es incorrecto. Puedes crearla ahora con este mismo PIN.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSessionMode('create');
+                    setCustomPin(sessionNotFoundState.pin);
+                    setSessionNotFoundState(null);
+                    setAuthError(null);
+                  }}
+                  className="flex-1 py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs cursor-pointer shadow-md transition text-center"
+                >
+                  Crear Sesión con PIN {sessionNotFoundState.pin}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSessionNotFoundState(null)}
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs cursor-pointer transition"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
 
           <button
             type="button"
             onClick={handleJoinSession}
-            disabled={joinPin.length !== 4}
+            disabled={joinPin.length !== 4 || isCheckingPin}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-indigo-950 transition cursor-pointer"
           >
-            <span>Conectar y Sincronizar en Vivo</span>
-            <ArrowRight className="w-4 h-4" />
+            {isCheckingPin ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                <span>Verificando sesión en Supabase...</span>
+              </>
+            ) : (
+              <>
+                <span>Conectar y Sincronizar en Vivo</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </div>
       )}
@@ -682,12 +787,28 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               </div>
 
               {/* Botón para Iniciar Sesión de Auditoría */}
+              {customPin && (
+                <div className="p-3 rounded-xl bg-indigo-950/70 border border-indigo-500/50 flex items-center justify-between text-xs text-indigo-200">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-indigo-400" />
+                    <span>PIN para la nueva sesión: <strong className="font-mono text-white text-sm">{customPin}</strong></span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCustomPin(null)}
+                    className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
+                  >
+                    Usar PIN aleatorio
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleStartNewSession}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-xl shadow-indigo-950 transition active:scale-98 cursor-pointer"
               >
-                <span>Generar PIN y Abrir Sesión de Auditoría</span>
+                <span>{customPin ? `Crear Sesión con PIN ${customPin}` : 'Generar PIN y Abrir Sesión de Auditoría'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
