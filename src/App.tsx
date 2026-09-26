@@ -161,23 +161,55 @@ export default function App() {
   };
 
   // Cargar datos de Odoo o Demo filtrados obligatoriamente por categoría sin truncar a 500
-  // y recuperar el estado actual de conteos desde Supabase
+  // y recuperar el estado actual de conteos desde Supabase (SELECT)
   const loadInventoryData = async (
     cfg: OdooConnectionConfig,
     locId?: number,
     isDemo = false,
-    catId?: number
+    catId?: number,
+    cachedCounts?: RealtimeCountUpdate[]
   ) => {
     const targetCatId = catId !== undefined ? catId : session?.categoryId;
     setItems([]); // Limpiar la lista anterior obligatoriamente
     setIsLoadingItems(true);
     setLoadError(null);
 
+    const activePin = session?.pin || localStorage.getItem('odoo_audit_active_pin');
+
     if (isDemo) {
       const demo = getDemoFVGrupoData();
-      const filteredQuants = targetCatId
+      let filteredQuants = targetCatId
         ? demo.quants.filter((q) => q.categId === targetCatId)
         : demo.quants;
+
+      // Sincronizar conteos guardados en Supabase o pasados inicialmente
+      if (activePin) {
+        try {
+          const remoteCounts = await fetchSessionCountsFromSupabase(activePin);
+          const effectiveCounts = remoteCounts.length > 0 ? remoteCounts : (cachedCounts || []);
+          if (effectiveCounts.length > 0) {
+            const countsMap = new Map(effectiveCounts.map((c) => [c.quantId, c]));
+            filteredQuants = filteredQuants.map((item) => {
+              const remote = countsMap.get(item.id);
+              if (remote) {
+                return {
+                  ...item,
+                  countedQuantity: remote.countedQuantity,
+                  difference: remote.countedQuantity - item.quantity,
+                  lastAuditedBy: remote.auditorName,
+                  lastAuditedAt: remote.timestamp,
+                  photoUrl: remote.photoUrl || item.photoUrl,
+                  notes: remote.notes || item.notes,
+                };
+              }
+              return item;
+            });
+          }
+        } catch {
+          // noop
+        }
+      }
+
       setItems(filteredQuants);
       setCategories(demo.categories);
       setIsLoadingItems(false);
@@ -192,13 +224,13 @@ export default function App() {
       // Consulta de 100% de productos filtrados por categ_id sin truncar a 500
       const quantsData = await fetchQuants(cfg, locId, targetCatId);
 
-      // Recuperar el estado actual del inventario y los conteos realizados por otros auditores desde Supabase
-      const activePin = session?.pin || localStorage.getItem('odoo_audit_active_pin');
+      // Recuperar el estado actual del inventario y los conteos realizados por otros auditores desde Supabase (SELECT)
       if (activePin) {
         try {
           const remoteCounts = await fetchSessionCountsFromSupabase(activePin);
-          if (remoteCounts && remoteCounts.length > 0) {
-            const countsMap = new Map(remoteCounts.map((c) => [c.quantId, c]));
+          const effectiveCounts = remoteCounts.length > 0 ? remoteCounts : (cachedCounts || []);
+          if (effectiveCounts && effectiveCounts.length > 0) {
+            const countsMap = new Map(effectiveCounts.map((c) => [c.quantId, c]));
             for (const item of quantsData) {
               const remote = countsMap.get(item.id);
               if (remote) {
@@ -269,6 +301,15 @@ export default function App() {
     // Actualizar categoría en Supabase para sincronizar a otros auditores
     updateSessionCategoryInSupabase(updatedSession.pin, cat.id, cat.name);
     loadInventoryData(odooConfig, updatedSession.locationId, isDemoMode, cat.id);
+  };
+
+  // Manejador para cerrar o saltar la selección obligatoria de categoría
+  const handleCategoryModalClose = () => {
+    setIsCategoryModalOpen(false);
+    // Si aún no hay productos cargados en memoria, cargar todos los productos de la ubicación
+    if (items.length === 0 && odooConfig && session) {
+      loadInventoryData(odooConfig, session.locationId, isDemoMode, undefined);
+    }
   };
 
   // Subscripción Supabase Realtime para la sesión activa
@@ -358,34 +399,59 @@ export default function App() {
 
   // Procesar código escaneado (desde escáner físico USB/Bluetooth o cámara)
   const handleBarcodeScanned = (rawCode: string) => {
-    const code = rawCode.trim().toLowerCase();
-    if (!code) return;
+    const clean = (rawCode || '').trim();
+    if (!clean) return;
 
-    // Buscar por barcode exacto o referencia interna
-    const found = items.find(
-      (item) =>
-        item.barcode.toLowerCase() === code ||
-        item.defaultCode.toLowerCase() === code ||
-        item.barcode.toLowerCase().includes(code) ||
-        item.defaultCode.toLowerCase().includes(code)
-    );
+    const code = clean.toLowerCase();
+    const digitsOnly = code.replace(/\D/g, '');
 
-    if (found) {
-      sound.playScan();
-      setFocusedQuantId(found.id);
+    // 1. Buscar coincidencia exacta o normalizada (EAN-13, EAN-8, UPC, Code128, Ref Interna)
+    let found = items.find((item) => {
+      const itemBarcode = (item.barcode || '').trim().toLowerCase();
+      const itemDefault = (item.defaultCode || '').trim().toLowerCase();
 
-      // Si el modo de escaneo continuo está activo, incrementar automáticamente +1
-      if (continuousScanMode) {
-        handleUpdateCount(found.id, found.countedQuantity + 1);
+      // Coincidencia directa por barcode o código interno (Code 128, etc.)
+      if (itemBarcode === code || itemDefault === code) return true;
+
+      // Coincidencia numérica flexible (EAN-13, EAN-8, UPC-A, UPC-E)
+      const itemDigits = itemBarcode.replace(/\D/g, '');
+      if (digitsOnly.length > 0 && itemDigits.length > 0) {
+        if (digitsOnly === itemDigits) return true;
+        // UPC-A (12 dígitos) vs EAN-13 (13 dígitos con 0 inicial)
+        const dNoZeros = digitsOnly.replace(/^0+/, '');
+        const iNoZeros = itemDigits.replace(/^0+/, '');
+        if (dNoZeros.length >= 6 && dNoZeros === iNoZeros) return true;
+        // Relleno a 13 dígitos
+        if (digitsOnly.padStart(13, '0') === itemDigits.padStart(13, '0')) return true;
       }
 
+      return false;
+    });
+
+    // 2. Coincidencia secundaria si no hubo exacta
+    if (!found) {
+      found = items.find(
+        (item) =>
+          (item.barcode && item.barcode.toLowerCase().includes(code)) ||
+          (item.defaultCode && item.defaultCode.toLowerCase().includes(code))
+      );
+    }
+
+    if (found) {
+      sound.playCountUp();
+      setFocusedQuantId(found.id);
+
+      // Sumar o abrir el conteo de inmediato (+1 a la cantidad contada actual)
+      const nextCount = Math.round(((found.countedQuantity || 0) + 1) * 100) / 100;
+      handleUpdateCount(found.id, nextCount);
+
       setSearchQuery('');
-      setLastAuditNotification(`✓ Escaneado: ${found.productName}`);
-      setTimeout(() => setLastAuditNotification(null), 3000);
+      setLastAuditNotification(`✓ ${found.productName} [+1] → Conteo: ${nextCount} uds.`);
+      setTimeout(() => setLastAuditNotification(null), 3500);
     } else {
       sound.playError();
       setLastAuditNotification(`⚠️ Código no encontrado: "${rawCode}"`);
-      setTimeout(() => setLastAuditNotification(null), 3000);
+      setTimeout(() => setLastAuditNotification(null), 3500);
     }
 
     // Devolver el foco al input para el siguiente disparo del lector láser
@@ -394,13 +460,61 @@ export default function App() {
     }
   };
 
-  // Manejador del input de búsqueda / escáner físico
+  // Manejador del input de búsqueda / escáner físico: listener para Enter y NumpadEnter
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (
+      e.key === 'Enter' ||
+      e.code === 'Enter' ||
+      e.code === 'NumpadEnter' ||
+      (e as any).keyCode === 13
+    ) {
       e.preventDefault();
       handleBarcodeScanned(searchQuery);
     }
   };
+
+  // Listener global para capturar disparos de pistolas lectoras Bluetooth / USB en la PWA
+  useEffect(() => {
+    if (!session) return;
+    let barcodeBuffer = '';
+    let lastKeyTime = 0;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT');
+      if (isInput && target !== searchInputRef.current) {
+        return;
+      }
+
+      if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+        if (barcodeBuffer.trim().length >= 3) {
+          e.preventDefault();
+          handleBarcodeScanned(barcodeBuffer.trim());
+          barcodeBuffer = '';
+          return;
+        }
+      }
+
+      const now = Date.now();
+      if (now - lastKeyTime > 150) {
+        barcodeBuffer = '';
+      }
+      lastKeyTime = now;
+
+      if (e.key.length === 1) {
+        barcodeBuffer += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [items, session]);
 
   // Exportar reporte a Excel (.xlsx)
   const handleExportExcel = () => {
@@ -488,7 +602,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
         <AuthForm
-          onSessionStarted={(newSession, config, isDemo) => {
+          onSessionStarted={(newSession, config, isDemo, initialCounts) => {
             setIsDemoMode(isDemo);
             setOdooConfig(config);
             setSession(newSession);
@@ -497,7 +611,7 @@ export default function App() {
             // Si la sesión ya tiene categoría configurada en Supabase (ej. creada previamente por el Lead)
             // cargar directamente el inventario con los conteos de otros auditores
             if (newSession.categoryId) {
-              loadInventoryData(config, newSession.locationId, isDemo, newSession.categoryId);
+              loadInventoryData(config, newSession.locationId, isDemo, newSession.categoryId, initialCounts);
             } else {
               // Si aún no tiene categoría, abrir el modal obligatorio de selección
               loadCategoriesOnly(config, isDemo);
@@ -823,10 +937,9 @@ export default function App() {
         auditorName={session.auditorName}
         sessionPin={session.pin}
         locationName={session.locationName}
-        currentCategoryId={session.categoryId}
-        canClose={!!session.categoryId}
+        canClose={true}
         onSelectCategory={handleCategorySelected}
-        onClose={() => setIsCategoryModalOpen(false)}
+        onClose={handleCategoryModalClose}
         onRetryLoadCategories={() => loadCategoriesOnly(odooConfig, isDemoMode)}
       />
     </div>

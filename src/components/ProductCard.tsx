@@ -108,7 +108,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       ref={cardRef}
       className={`relative rounded-2xl bg-slate-900/90 border transition-all duration-200 overflow-hidden shadow-lg ${
         isFocused
-          ? 'border-indigo-500 ring-2 ring-indigo-500/40 shadow-indigo-950/60 scale-[1.01]'
+          ? 'border-emerald-500 ring-4 ring-emerald-500/40 shadow-2xl shadow-emerald-950/80 scale-[1.02] bg-slate-900/95'
           : 'border-slate-800 hover:border-slate-700/80 shadow-slate-950/50'
       }`}
     >

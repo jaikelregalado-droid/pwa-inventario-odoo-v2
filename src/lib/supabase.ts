@@ -303,7 +303,7 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
 export async function checkSessionExistsInSupabase(pin: string): Promise<{
   configured: boolean;
   exists: boolean;
-  session?: Partial<AuditSession>;
+  session?: Partial<AuditSession> & { odooUrl?: string; odooDb?: string };
   counts?: RealtimeCountUpdate[];
   error?: string;
 }> {
@@ -327,36 +327,44 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
   }
 
   try {
-    // 1. Intentar consultar tabla audit_sessions
+    // 1. SELECT en audit_sessions / inventory_sessions / sessions por PIN
     let sessionRecord: any = null;
-    try {
-      const { data, error } = await client
-        .from('audit_sessions')
-        .select('*')
-        .eq('pin', pin)
-        .maybeSingle();
+    const sessionTables = ['audit_sessions', 'inventory_sessions', 'sessions'];
+    for (const table of sessionTables) {
+      try {
+        const { data, error } = await client
+          .from(table)
+          .select('*')
+          .eq('pin', pin)
+          .maybeSingle();
 
-      if (!error && data) {
-        sessionRecord = data;
+        if (!error && data) {
+          sessionRecord = data;
+          break;
+        }
+      } catch {
+        // continuar a siguiente tabla
       }
-    } catch {
-      // noop si no existe tabla aún
     }
 
-    // 2. Consultar conteos existentes en audit_counts
+    // 2. SELECT en audit_counts / inventory_counts / counts para cargar los conteos actuales
     let countsRows: any[] = [];
-    try {
-      const { data: countsData, error: countsErr } = await client
-        .from('audit_counts')
-        .select('*')
-        .eq('pin', pin)
-        .order('updated_at', { ascending: false });
+    const countTables = ['audit_counts', 'inventory_counts', 'counts'];
+    for (const table of countTables) {
+      try {
+        const { data: countsData, error: countsErr } = await client
+          .from(table)
+          .select('*')
+          .eq('pin', pin)
+          .order('updated_at', { ascending: false });
 
-      if (!countsErr && countsData && countsData.length > 0) {
-        countsRows = countsData;
+        if (!countsErr && countsData && countsData.length > 0) {
+          countsRows = countsData;
+          break;
+        }
+      } catch {
+        // continuar a siguiente tabla
       }
-    } catch {
-      // noop
     }
 
     const hasSession = !!sessionRecord || countsRows.length > 0;
@@ -381,7 +389,7 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
       // noop
     }
 
-    const foundSession: Partial<AuditSession> = {
+    const foundSession: Partial<AuditSession> & { odooUrl?: string; odooDb?: string } = {
       id: sessionRecord?.id || `session_${pin}`,
       pin,
       createdAt: sessionRecord?.created_at,
@@ -391,6 +399,8 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
       locationId: sessionRecord?.location_id || undefined,
       categoryId: sessionRecord?.category_id || undefined,
       categoryName: sessionRecord?.category_name || undefined,
+      odooUrl: sessionRecord?.odoo_url || undefined,
+      odooDb: sessionRecord?.odoo_db || undefined,
     };
 
     return {
@@ -410,7 +420,7 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
 }
 
 /**
- * 2. Recupera los conteos realizados por otros auditores para una sesión
+ * 2. Recupera los conteos realizados por otros auditores para una sesión mediante SELECT en Supabase
  */
 export async function fetchSessionCountsFromSupabase(pin: string): Promise<RealtimeCountUpdate[]> {
   if (!pin) return [];
@@ -466,19 +476,28 @@ export async function fetchSessionCountsFromSupabase(pin: string): Promise<Realt
 }
 
 /**
- * Registra o actualiza la metadata de la sesión en Supabase
+ * Registra o actualiza de forma obligatoria la metadata de la sesión en Supabase mediante UPSERT o INSERT
  */
 export async function registerSessionInSupabase(
   session: AuditSession,
   odooConfig?: any
-): Promise<boolean> {
+): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    return { success: false, error: 'Cliente de Supabase no configurado' };
+  }
 
-  try {
-    const sessionId = session.id || `session_${session.pin}_${Date.now()}`;
-    await client.from('audit_sessions').upsert(
-      {
+  const sessionId = session.id || `session_${session.pin}_${Date.now()}`;
+  const now = new Date().toISOString();
+
+  // Tablas compatibles soportadas (audit_sessions, inventory_sessions, sessions)
+  const sessionTables = ['audit_sessions', 'inventory_sessions', 'sessions'];
+  let lastError: string | null = null;
+  let saved = false;
+
+  for (const table of sessionTables) {
+    try {
+      const payload: Record<string, any> = {
         id: sessionId,
         pin: session.pin,
         lead_name: session.auditorName,
@@ -491,15 +510,46 @@ export async function registerSessionInSupabase(
         odoo_url: odooConfig?.url || null,
         odoo_db: odooConfig?.db || null,
         status: 'active',
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'pin' }
-    );
-    return true;
-  } catch (err) {
-    console.warn('Aviso: audit_sessions upsert no disponible:', err);
-    return false;
+        created_at: session.createdAt || now,
+        updated_at: now,
+      };
+
+      // Intentar UPSERT obligatorio por PIN
+      const { error } = await client
+        .from(table)
+        .upsert(payload, { onConflict: 'pin' });
+
+      if (!error) {
+        console.info(`✓ Sesión PIN ${session.pin} guardada en tabla '${table}' de Supabase (UPSERT exitoso)`);
+        saved = true;
+        break;
+      } else {
+        lastError = error.message;
+        // Si hay una violación de RLS (seguridad a nivel de filas) o permisos
+        if (
+          error.code === '42501' ||
+          error.message?.toLowerCase().includes('row-level security') ||
+          error.message?.toLowerCase().includes('permission denied')
+        ) {
+          return {
+            success: false,
+            error: `Error de permisos en Supabase (RLS): ${error.message}. Por favor habilita políticas de lectura y escritura en la tabla '${table}'.`,
+          };
+        }
+      }
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+    }
   }
+
+  if (saved) {
+    return { success: true };
+  }
+
+  return {
+    success: false,
+    error: lastError || 'No se pudo guardar la sesión en Supabase. Verifica la conexión y permisos de base de datos.',
+  };
 }
 
 /**

@@ -18,9 +18,10 @@ import {
   ChevronDown,
   RefreshCw,
   FolderOpen,
-  Download
+  Download,
+  Loader2
 } from 'lucide-react';
-import { OdooConnectionConfig, OdooCompany, OdooLocation, OdooCategory, AuditSession } from '../types';
+import { OdooConnectionConfig, OdooCompany, OdooLocation, OdooCategory, AuditSession, RealtimeCountUpdate } from '../types';
 import { sanitizeOdooUrl, authenticateOdoo, fetchLocations, fetchCategories, getDemoFVGrupoData, getCachedUid } from '../lib/odoo';
 import {
   generateSessionPin,
@@ -34,13 +35,20 @@ import { sound } from '../lib/audio';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface AuthFormProps {
-  onSessionStarted: (session: AuditSession, config: OdooConnectionConfig, isDemo: boolean) => void;
+  onSessionStarted: (
+    session: AuditSession,
+    config: OdooConnectionConfig,
+    isDemo: boolean,
+    initialCounts?: RealtimeCountUpdate[]
+  ) => void;
   savedConfig?: OdooConnectionConfig;
 }
 
 export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfig }) => {
   // Modo de inicio: 'create' (nueva auditoría) o 'join' (unirse con PIN)
   const [sessionMode, setSessionMode] = useState<'create' | 'join'>('create');
+  const [isCreatingSession, setIsCreatingSession] = useState<boolean>(false);
+  const [isCreatingFromNotFound, setIsCreatingFromNotFound] = useState<boolean>(false);
 
   // Campos de Odoo 17 (Configuración por defecto solicitada)
   const defaultUrl = 'https://erp.pruebas.fvgrupoempresarial.com';
@@ -225,49 +233,149 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
       return;
     }
 
-    localStorage.setItem('odoo_auditor_name', auditorName.trim());
-    const pin = customPin || generateSessionPin();
-    const sessionId = `session_${pin}_${Date.now()}`;
+    setIsCreatingSession(true);
+    setAuthError(null);
 
-    const selectedComp =
-      companies.find((c) => c.id === selectedCompanyId)?.name || 'FV GRUPO EMPRESARIAL, C.A.';
-    const selectedLoc =
-      locations.find((l) => l.id === selectedLocationId)?.complete_name ||
-      'WH/Existencias';
+    try {
+      localStorage.setItem('odoo_auditor_name', auditorName.trim());
+      const pin = customPin || generateSessionPin();
+      const sessionId = `session_${pin}_${Date.now()}`;
 
-    const session: AuditSession = {
-      id: sessionId,
-      pin,
-      auditorName: auditorName.trim(),
-      role: 'lead',
-      createdAt: new Date().toISOString(),
-      companyName: selectedComp,
-      companyId: selectedCompanyId || 1,
-      locationName: selectedLoc,
-      locationId: selectedLocationId,
-    };
+      const selectedComp =
+        companies.find((c) => c.id === selectedCompanyId)?.name || 'FV GRUPO EMPRESARIAL, C.A.';
+      const selectedLoc =
+        locations.find((l) => l.id === selectedLocationId)?.complete_name ||
+        'WH/Existencias';
 
-    const effectiveProxy = isCustomProxy ? (customProxyUrl.trim() || 'direct') : proxyUrl;
+      const session: AuditSession = {
+        id: sessionId,
+        pin,
+        auditorName: auditorName.trim(),
+        role: 'lead',
+        createdAt: new Date().toISOString(),
+        companyName: selectedComp,
+        companyId: selectedCompanyId || 1,
+        locationName: selectedLoc,
+        locationId: selectedLocationId,
+        categoryId: selectedCategoryId || undefined,
+        categoryName: categories.find((c) => c.id === selectedCategoryId)?.name || undefined,
+      };
 
-    const finalConfig: OdooConnectionConfig = {
-      url: sanitizeOdooUrl(url),
-      db: db.trim(),
-      username: username.trim(),
-      apiKey: apiKey.trim(),
-      proxyUrl: effectiveProxy,
-      companyId: selectedCompanyId,
-      companyName: selectedComp,
-      uid: authenticatedUid || getCachedUid() || undefined,
-    };
+      const effectiveProxy = isCustomProxy ? (customProxyUrl.trim() || 'direct') : proxyUrl;
 
-    localStorage.setItem('odoo_audit_active_pin', pin);
-    localStorage.setItem('odoo_audit_session_id', sessionId);
+      const finalConfig: OdooConnectionConfig = {
+        url: sanitizeOdooUrl(url),
+        db: db.trim(),
+        username: username.trim(),
+        apiKey: apiKey.trim(),
+        proxyUrl: effectiveProxy,
+        companyId: selectedCompanyId,
+        companyName: selectedComp,
+        uid: authenticatedUid || getCachedUid() || undefined,
+      };
 
-    // Registrar sesión en Supabase para permitir que otros auditores se unan
-    await registerSessionInSupabase(session, finalConfig);
+      localStorage.setItem('odoo_audit_active_pin', pin);
+      localStorage.setItem('odoo_audit_session_id', sessionId);
 
-    sound.playSuccess();
-    onSessionStarted(session, finalConfig, false);
+      // OBLIGATORIO: Realizar UPSERT en la tabla de sesiones de Supabase para guardar la sesión
+      const supaResult = await registerSessionInSupabase(session, finalConfig);
+      
+      // La PWA debe esperar la confirmación de guardado de Supabase antes de ingresar al inventario. Si la inserción falla (por RLS o credenciales), muestra el mensaje de error explícito en pantalla.
+      if (!supaResult.success) {
+        sound.playError();
+        setAuthError(
+          `Error al registrar sesión en Supabase: ${supaResult.error || 'Fallo de inserción'}. Verifica permisos RLS o credenciales en Supabase.`
+        );
+        return;
+      }
+
+      localStorage.setItem('odoo_audit_active_pin', pin);
+      localStorage.setItem('odoo_audit_session_id', sessionId);
+
+      sound.playSuccess();
+      onSessionStarted(session, finalConfig, false);
+    } catch (err: any) {
+      console.error('Error al iniciar sesión:', err);
+      sound.playError();
+      setAuthError(`Error al inicializar sesión: ${err.message || String(err)}`);
+    } finally {
+      setIsCreatingSession(false);
+    }
+  };
+
+  // Crear Sesión directamente desde el botón amarillo "Crear Sesión con PIN [código]"
+  const handleCreateSessionWithPin = async (targetPin: string) => {
+    if (!auditorName.trim()) {
+      setAuthError('Por favor ingresa tu nombre de auditor antes de crear la sesión.');
+      sound.playError();
+      return;
+    }
+
+    setIsCreatingFromNotFound(true);
+    setAuthError(null);
+
+    try {
+      localStorage.setItem('odoo_auditor_name', auditorName.trim());
+      const sessionId = `session_${targetPin}_${Date.now()}`;
+
+      const selectedComp =
+        companies.find((c) => c.id === selectedCompanyId)?.name || 'FV GRUPO EMPRESARIAL, C.A.';
+      const selectedLoc =
+        locations.find((l) => l.id === selectedLocationId)?.complete_name ||
+        'WH/Existencias';
+
+      const session: AuditSession = {
+        id: sessionId,
+        pin: targetPin,
+        auditorName: auditorName.trim(),
+        role: 'lead',
+        createdAt: new Date().toISOString(),
+        companyName: selectedComp,
+        companyId: selectedCompanyId || 1,
+        locationName: selectedLoc,
+        locationId: selectedLocationId,
+        categoryId: selectedCategoryId || undefined,
+        categoryName: categories.find((c) => c.id === selectedCategoryId)?.name || undefined,
+      };
+
+      const effectiveProxy = isCustomProxy ? (customProxyUrl.trim() || 'direct') : proxyUrl;
+
+      const finalConfig: OdooConnectionConfig = {
+        url: sanitizeOdooUrl(url),
+        db: db.trim(),
+        username: username.trim(),
+        apiKey: apiKey.trim(),
+        proxyUrl: effectiveProxy,
+        companyId: selectedCompanyId,
+        companyName: selectedComp,
+        uid: authenticatedUid || getCachedUid() || undefined,
+      };
+
+      // OBLIGATORIO: Realizar UPSERT o INSERT en la tabla de sesiones de Supabase y esperar confirmación
+      const supaResult = await registerSessionInSupabase(session, finalConfig);
+
+      // Si la inserción falla (por RLS o credenciales), muestra el mensaje de error explícito en pantalla
+      if (!supaResult.success) {
+        sound.playError();
+        setAuthError(
+          `Error al registrar sesión en Supabase: ${supaResult.error || 'Fallo de inserción'}. Verifica políticas RLS o credenciales en Supabase.`
+        );
+        return;
+      }
+
+      localStorage.setItem('odoo_audit_active_pin', targetPin);
+      localStorage.setItem('odoo_audit_session_id', sessionId);
+      setSessionNotFoundState(null);
+
+      sound.playSuccess();
+      onSessionStarted(session, finalConfig, false);
+    } catch (err: any) {
+      console.error('Error al registrar sesión en Supabase:', err);
+      sound.playError();
+      setAuthError(`Error al crear sesión en Supabase: ${err.message || String(err)}`);
+    } finally {
+      setIsCreatingFromNotFound(false);
+    }
   };
 
   // Unirse a Sesión Existente mediante PIN
@@ -288,7 +396,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
     setIsCheckingPin(true);
 
     try {
-      // 1. Al ingresar un PIN de sesión en la PWA, realizar primero una consulta a Supabase para verificar si la sesión ya existe
+      // 1. Al ingresar un PIN de sesión en la PWA, realizar primero una consulta a Supabase (SELECT) para verificar si la sesión ya existe
       const checkResult = await checkSessionExistsInSupabase(cleanPin);
 
       // 2. Si la sesión existe:
@@ -313,10 +421,12 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
         };
 
         const effectiveProxy = isCustomProxy ? (customProxyUrl.trim() || 'direct') : proxyUrl;
+        const effectiveUrl = url || checkResult.session?.odooUrl || defaultUrl;
+        const effectiveDb = db || checkResult.session?.odooDb || defaultDb;
 
         const finalConfig: OdooConnectionConfig = {
-          url: sanitizeOdooUrl(url),
-          db: db.trim(),
+          url: sanitizeOdooUrl(effectiveUrl),
+          db: effectiveDb.trim(),
           username: username.trim(),
           apiKey: apiKey.trim(),
           proxyUrl: effectiveProxy,
@@ -326,7 +436,8 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
         };
 
         sound.playSuccess();
-        onSessionStarted(session, finalConfig, false);
+        // Conectar la sesión y pasar los conteos recuperados mediante SELECT
+        onSessionStarted(session, finalConfig, false, checkResult.counts);
         return;
       }
 
@@ -494,20 +605,24 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSessionMode('create');
-                    setCustomPin(sessionNotFoundState.pin);
-                    setSessionNotFoundState(null);
-                    setAuthError(null);
-                  }}
-                  className="flex-1 py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs cursor-pointer shadow-md transition text-center"
+                  disabled={isCreatingFromNotFound}
+                  onClick={() => handleCreateSessionWithPin(sessionNotFoundState.pin)}
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-white font-bold text-xs cursor-pointer shadow-md transition text-center flex items-center justify-center gap-2"
                 >
-                  Crear Sesión con PIN {sessionNotFoundState.pin}
+                  {isCreatingFromNotFound ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando en Supabase (UPSERT)...</span>
+                    </>
+                  ) : (
+                    <span>Crear Sesión con PIN {sessionNotFoundState.pin}</span>
+                  )}
                 </button>
                 <button
                   type="button"
+                  disabled={isCreatingFromNotFound}
                   onClick={() => setSessionNotFoundState(null)}
-                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs cursor-pointer transition"
+                  className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs cursor-pointer transition"
                 >
                   Cancelar
                 </button>
@@ -805,11 +920,21 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
 
               <button
                 type="button"
+                disabled={isCreatingSession}
                 onClick={handleStartNewSession}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-xl shadow-indigo-950 transition active:scale-98 cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-sm shadow-xl shadow-indigo-950 transition active:scale-98 cursor-pointer"
               >
-                <span>{customPin ? `Crear Sesión con PIN ${customPin}` : 'Generar PIN y Abrir Sesión de Auditoría'}</span>
-                <ArrowRight className="w-4 h-4" />
+                {isCreatingSession ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Guardando sesión en Supabase (UPSERT)...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{customPin ? `Crear Sesión con PIN ${customPin}` : 'Generar PIN y Abrir Sesión de Auditoría'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </div>
           )}
