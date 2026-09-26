@@ -1,0 +1,10 @@
+{
+  "name": "Odoo 17 Inventario Realtime PWA",
+  "description": "Progressive Web App colaborativa en tiempo real para auditorías e inventarios físicos en piso y almacén integrada con Odoo 17 y Supabase.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
