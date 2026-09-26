@@ -29,6 +29,7 @@ import {
   saveSupabaseSettings,
   checkSessionExistsInSupabase,
   registerSessionInSupabase,
+  isSupabaseConfigured,
   SupabaseSettings
 } from '../lib/supabase';
 import { sound } from '../lib/audio';

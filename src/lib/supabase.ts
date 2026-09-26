@@ -50,27 +50,48 @@ export function saveSupabaseSettings(settings: SupabaseSettings) {
 }
 
 /**
+ * Verifica si las credenciales de Supabase están configuradas con una URL válida real.
+ * Si están vacías o contienen "xyzcompany.supabase.co" o placeholders, retorna false (activando modo Local / P2P).
+ */
+export function isSupabaseConfigured(): boolean {
+  const { url, anonKey } = getSavedSupabaseSettings();
+  if (!url || !anonKey) return false;
+  const cleanUrl = url.trim().toLowerCase();
+  if (
+    cleanUrl.includes('xyzcompany') ||
+    cleanUrl.includes('your-project') ||
+    cleanUrl.includes('example.supabase.co') ||
+    !cleanUrl.startsWith('http') ||
+    anonKey.trim().length < 15
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Obtiene o inicializa la instancia de SupabaseClient
  */
 export function getSupabaseClient(): SupabaseClient | null {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
   if (activeClient) return activeClient;
 
   const { url, anonKey } = getSavedSupabaseSettings();
-  if (url && anonKey && url.startsWith('http')) {
-    try {
-      activeClient = createClient(url, anonKey, {
-        realtime: {
-          params: {
-            eventsPerSecond: 15,
-          },
+  try {
+    activeClient = createClient(url.trim(), anonKey.trim(), {
+      realtime: {
+        params: {
+          eventsPerSecond: 15,
         },
-      });
-      return activeClient;
-    } catch (err) {
-      console.error('Error al inicializar cliente Supabase:', err);
-    }
+      },
+    });
+    return activeClient;
+  } catch (err) {
+    console.error('Error al inicializar cliente Supabase:', err);
+    return null;
   }
-  return null;
 }
 
 /**
@@ -309,19 +330,31 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
 }> {
   const client = getSupabaseClient();
   if (!client) {
-    // Si no hay cliente Supabase configurado, consultar en cache local
+    // Si no hay cliente Supabase configurado (o URL placeholder), consultar en cache local P2P
+    const localSession = localStorage.getItem(`odoo_audit_local_session_${pin}`);
     const localCache = localStorage.getItem(`${STORAGE_KEY_COUNTS}${pin}`);
+
+    let parsedSession: Partial<AuditSession> | undefined;
+    let parsedCounts: RealtimeCountUpdate[] = [];
+
+    if (localSession) {
+      try {
+        parsedSession = JSON.parse(localSession);
+      } catch {}
+    }
     if (localCache) {
       try {
-        const parsed = JSON.parse(localCache);
-        return {
-          configured: false,
-          exists: true,
-          counts: parsed,
-        };
-      } catch {
-        // noop
-      }
+        parsedCounts = JSON.parse(localCache);
+      } catch {}
+    }
+
+    if (parsedSession || parsedCounts.length > 0) {
+      return {
+        configured: false,
+        exists: true,
+        session: parsedSession || { pin, id: `session_${pin}` },
+        counts: parsedCounts,
+      };
     }
     return { configured: false, exists: false };
   }
@@ -481,10 +514,21 @@ export async function fetchSessionCountsFromSupabase(pin: string): Promise<Realt
 export async function registerSessionInSupabase(
   session: AuditSession,
   odooConfig?: any
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; isLocal?: boolean; error?: string }> {
+  // 1. Si Supabase no está configurado (o es xyzcompany), operar en Modo Soberano / Local P2P
+  if (!isSupabaseConfigured()) {
+    try {
+      localStorage.setItem(`odoo_audit_local_session_${session.pin}`, JSON.stringify(session));
+      console.info(`ℹ Operando en Modo Soberano / Local P2P para sesión ${session.pin}`);
+      return { success: true, isLocal: true };
+    } catch {
+      return { success: true, isLocal: true };
+    }
+  }
+
   const client = getSupabaseClient();
   if (!client) {
-    return { success: false, error: 'Cliente de Supabase no configurado' };
+    return { success: false, error: 'Cliente de Supabase no disponible a pesar de tener URL configurada' };
   }
 
   const sessionId = session.id || `session_${session.pin}_${Date.now()}`;
