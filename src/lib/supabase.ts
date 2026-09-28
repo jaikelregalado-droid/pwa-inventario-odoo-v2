@@ -18,21 +18,33 @@ let activeClient: SupabaseClient | null = null;
 let activeChannel: RealtimeChannel | null = null;
 let localBroadcastChannel: BroadcastChannel | null = null;
 
+export const DEFAULT_SUPABASE_URL = 'https://sepeawvmamugivoptfyf.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_MOfmPFfZnJTEfQndXvDM-w_C18ep';
+
 /**
- * Obtiene la configuración de Supabase guardada
+ * Obtiene la configuración de Supabase guardada, o los valores por defecto oficiales del proyecto
  */
 export function getSavedSupabaseSettings(): SupabaseSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CONFIG);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (
+        parsed.url &&
+        parsed.anonKey &&
+        !parsed.url.includes('su-proyecto') &&
+        !parsed.url.includes('xyzcompany') &&
+        !parsed.url.includes('your-project')
+      ) {
+        return parsed;
+      }
     }
   } catch {
     // noop
   }
   return {
-    url: '',
-    anonKey: '',
+    url: DEFAULT_SUPABASE_URL,
+    anonKey: DEFAULT_SUPABASE_ANON_KEY,
   };
 }
 
@@ -51,7 +63,7 @@ export function saveSupabaseSettings(settings: SupabaseSettings) {
 
 /**
  * Verifica si las credenciales de Supabase están configuradas con una URL válida real.
- * Si están vacías o contienen "xyzcompany.supabase.co" o placeholders, retorna false (activando modo Local / P2P).
+ * Si están vacías o contienen placeholders, retorna false (activando modo Local / P2P).
  */
 export function isSupabaseConfigured(): boolean {
   const { url, anonKey } = getSavedSupabaseSettings();
@@ -60,9 +72,10 @@ export function isSupabaseConfigured(): boolean {
   if (
     cleanUrl.includes('xyzcompany') ||
     cleanUrl.includes('your-project') ||
+    cleanUrl.includes('su-proyecto') ||
     cleanUrl.includes('example.supabase.co') ||
     !cleanUrl.startsWith('http') ||
-    anonKey.trim().length < 15
+    anonKey.trim().length < 10
   ) {
     return false;
   }

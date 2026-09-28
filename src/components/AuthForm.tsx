@@ -30,6 +30,8 @@ import {
   checkSessionExistsInSupabase,
   registerSessionInSupabase,
   isSupabaseConfigured,
+  DEFAULT_SUPABASE_URL,
+  DEFAULT_SUPABASE_ANON_KEY,
   SupabaseSettings
 } from '../lib/supabase';
 import { sound } from '../lib/audio';
@@ -505,8 +507,12 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
         </p>
 
         {/* Botón PWA install */}
-        <div className="pt-2 flex justify-center">
+        <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
           <PWAInstallButton />
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            Supabase Cloud Realtime Activo (sepeawvmamugivoptfyf)
+          </span>
         </div>
       </div>
 
@@ -986,7 +992,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           {showSupabaseSettings && (
             <div className="p-3.5 pt-1 space-y-3 border-t border-slate-800 bg-slate-950/70">
               <p className="text-[11px] text-slate-400">
-                La app sincroniza en tiempo real de forma nativa entre pestañas y dispositivos. Para sincronizar a través de la nube de Supabase (tabla <code className="text-indigo-300">audit_counts</code>), ingresa las credenciales de tu proyecto Supabase:
+                La app sincroniza en tiempo real de forma nativa a través de la nube de Supabase (tablas <code className="text-indigo-300">audit_sessions</code> y <code className="text-indigo-300">audit_counts</code>). Credenciales predeterminadas del proyecto:
               </p>
 
               <div className="space-y-1">
@@ -995,29 +1001,47 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                   type="text"
                   value={supabaseSettings.url}
                   onChange={(e) => setSupabaseSettingsState({ ...supabaseSettings, url: e.target.value.trim() })}
-                  placeholder="https://xyzcompany.supabase.co"
+                  placeholder={DEFAULT_SUPABASE_URL}
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-300">Supabase Anon Key:</label>
+                <label className="text-[11px] font-medium text-slate-300">Supabase Publishable / Anon Key:</label>
                 <input
-                  type="password"
+                  type="text"
                   value={supabaseSettings.anonKey}
                   onChange={(e) => setSupabaseSettingsState({ ...supabaseSettings, anonKey: e.target.value.trim() })}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  placeholder={DEFAULT_SUPABASE_ANON_KEY}
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none"
                 />
               </div>
 
-              <button
-                type="button"
-                onClick={handleSaveSupabase}
-                className="w-full py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer"
-              >
-                Guardar Credenciales Supabase
-              </button>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleSaveSupabase}
+                  className="flex-1 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer"
+                >
+                  Guardar Credenciales
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const def = {
+                      url: DEFAULT_SUPABASE_URL,
+                      anonKey: DEFAULT_SUPABASE_ANON_KEY,
+                    };
+                    setSupabaseSettingsState(def);
+                    saveSupabaseSettings(def);
+                    sound.playSuccess();
+                  }}
+                  className="py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-medium text-xs transition cursor-pointer"
+                  title="Restablecer valores originales de Supabase"
+                >
+                  Restablecer
+                </button>
+              </div>
             </div>
           )}
 
