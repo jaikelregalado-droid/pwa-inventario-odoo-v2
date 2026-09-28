@@ -19,7 +19,10 @@ import {
   RefreshCw,
   FolderOpen,
   Download,
-  Loader2
+  Loader2,
+  Code2,
+  Check,
+  Copy
 } from 'lucide-react';
 import { OdooConnectionConfig, OdooCompany, OdooLocation, OdooCategory, AuditSession, RealtimeCountUpdate } from '../types';
 import { sanitizeOdooUrl, authenticateOdoo, fetchLocations, fetchCategories, getDemoFVGrupoData, getCachedUid } from '../lib/odoo';
@@ -32,6 +35,7 @@ import {
   isSupabaseConfigured,
   DEFAULT_SUPABASE_URL,
   DEFAULT_SUPABASE_ANON_KEY,
+  SUPABASE_SQL_SCHEMA,
   SupabaseSettings
 } from '../lib/supabase';
 import { sound } from '../lib/audio';
@@ -136,6 +140,9 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
   const [isCheckingPin, setIsCheckingPin] = useState<boolean>(false);
   const [sessionNotFoundState, setSessionNotFoundState] = useState<{ pin: string } | null>(null);
   const [customPin, setCustomPin] = useState<string | null>(null);
+  const [autoCreateOnJoin, setAutoCreateOnJoin] = useState<boolean>(true);
+  const [showSqlSchema, setShowSqlSchema] = useState<boolean>(false);
+  const [copiedSql, setCopiedSql] = useState<boolean>(false);
 
   // Configuración de Supabase opcional
   const [showSupabaseSettings, setShowSupabaseSettings] = useState<boolean>(false);
@@ -444,11 +451,18 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
         return;
       }
 
-      // 3. Si la sesión no existe, notificar y permitir crearla normalmente
+      // 3. Si la sesión no existe en Supabase ni en almacenamiento local:
+      if (autoCreateOnJoin) {
+        // Auto-crear la sesión con este PIN e ingresar inmediatamente
+        await handleCreateSessionWithPin(cleanPin);
+        return;
+      }
+
+      // Si la auto-creación automática está desactivada, mostrar opción para crearla
       sound.playError();
       setSessionNotFoundState({ pin: cleanPin });
       setAuthError(
-        `La sesión con PIN ${cleanPin} no fue encontrada en Supabase. Verifica el PIN o crea la sesión si eres el supervisor.`
+        `La sesión con PIN ${cleanPin} no fue encontrada en Supabase. Puedes crearla e ingresar haciendo clic en el botón a continuación.`
       );
     } catch (err: any) {
       console.error('Error al verificar sesión en Supabase:', err);
@@ -593,6 +607,18 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               disabled={isCheckingPin}
               className="w-full text-center text-4xl font-mono font-black tracking-widest py-3 rounded-2xl bg-slate-950 border-2 border-indigo-500/70 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20 text-white outline-none disabled:opacity-50"
             />
+          </div>
+
+          <div className="flex items-center justify-center gap-2 -mt-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-300 hover:text-white transition">
+              <input
+                type="checkbox"
+                checked={autoCreateOnJoin}
+                onChange={(e) => setAutoCreateOnJoin(e.target.checked)}
+                className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span>Crear sesión automáticamente si no existe en Supabase</span>
+            </label>
           </div>
 
           {/* Tarjeta de Sesión No Encontrada con Opción de Creación */}
@@ -1069,6 +1095,41 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                 >
                   Probar Conexión
                 </button>
+              </div>
+
+              {/* Botón para ver y copiar el Script SQL de Supabase */}
+              <div className="pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowSqlSchema(!showSqlSchema)}
+                  className="flex items-center gap-1.5 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
+                >
+                  <Code2 className="w-3.5 h-3.5" />
+                  <span>{showSqlSchema ? 'Ocultar' : 'Ver'} Script SQL para Supabase (Tablas audit_sessions, audit_items y RLS)</span>
+                </button>
+
+                {showSqlSchema && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-mono">audit_schema_rls.sql</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+                          setCopiedSql(true);
+                          setTimeout(() => setCopiedSql(false), 2000);
+                        }}
+                        className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                      >
+                        {copiedSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedSql ? 'Copiado' : 'Copiar SQL'}</span>
+                      </button>
+                    </div>
+                    <pre className="font-mono text-[9px] text-slate-300 overflow-x-auto p-2 rounded bg-slate-900 max-h-44 leading-relaxed">
+                      {SUPABASE_SQL_SCHEMA}
+                    </pre>
+                  </div>
+                )}
               </div>
             </div>
           )}

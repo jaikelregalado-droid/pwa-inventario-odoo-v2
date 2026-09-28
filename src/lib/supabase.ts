@@ -222,7 +222,32 @@ export function subscribeToAuditSession(
     }
   });
 
-  // 2. Escuchar 'postgres_changes' en la tabla 'audit_counts' filtrando por pin
+  // 2. Escuchar 'postgres_changes' en 'audit_items' filtrando por pin
+  channel.on(
+    'postgres_changes',
+    {
+      event: '*',
+      schema: 'public',
+      table: 'audit_items',
+      filter: `pin=eq.${pin}`,
+    },
+    (payload) => {
+      const row = (payload.new || payload.old) as any;
+      if (row && (row.quant_id || row.product_id)) {
+        onCountUpdate({
+          quantId: Number(row.quant_id || row.product_id),
+          countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+          auditorName: row.auditor_name || 'Auditor',
+          timestamp: row.updated_at || row.created_at || new Date().toISOString(),
+          pin: row.pin,
+          photoUrl: row.photo_url || undefined,
+          notes: row.notes || undefined,
+        });
+      }
+    }
+  );
+
+  // Escuchar 'postgres_changes' en 'audit_counts' por compatibilidad
   channel.on(
     'postgres_changes',
     {
@@ -233,15 +258,15 @@ export function subscribeToAuditSession(
     },
     (payload) => {
       const row = (payload.new || payload.old) as any;
-      if (row && row.quant_id) {
+      if (row && (row.quant_id || row.product_id)) {
         onCountUpdate({
-          quantId: row.quant_id,
-          countedQuantity: Number(row.counted_quantity),
+          quantId: Number(row.quant_id || row.product_id),
+          countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
           auditorName: row.auditor_name || 'Auditor',
-          timestamp: row.updated_at || new Date().toISOString(),
+          timestamp: row.updated_at || row.created_at || new Date().toISOString(),
           pin: row.pin,
-          photoUrl: row.photo_url,
-          notes: row.notes,
+          photoUrl: row.photo_url || undefined,
+          notes: row.notes || undefined,
         });
       }
     }
@@ -339,32 +364,50 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
     }
   }
 
-  // 3. Persistir en la tabla 'audit_counts' si el cliente Supabase está conectado
+  // 3. Persistir en la tabla 'audit_items' (o 'audit_counts') si el cliente Supabase está conectado
   const client = getSupabaseClient();
   if (client) {
-    try {
-      await client.from('audit_counts').upsert(
-        {
+    const candidateTables = ['audit_items', 'audit_counts'];
+    for (const table of candidateTables) {
+      try {
+        const itemRecord: Record<string, any> = {
+          id: `${update.pin}_${update.quantId}`,
           pin: update.pin,
           quant_id: update.quantId,
           counted_quantity: update.countedQuantity,
+          qty: update.countedQuantity,
           auditor_name: update.auditorName,
           photo_url: update.photoUrl || null,
           notes: update.notes || null,
           updated_at: update.timestamp,
-        },
-        { onConflict: 'pin,quant_id' }
-      );
-    } catch (dbErr) {
-      // Si la tabla no está creada aún, no bloqueamos la experiencia fluida de usuario
-      console.warn('Nota: guardado en tabla audit_counts omitido o tabla no creada:', dbErr);
+        };
+
+        const { error } = await client
+          .from(table)
+          .upsert(itemRecord, { onConflict: 'pin,quant_id' });
+
+        if (!error) {
+          break;
+        } else {
+          // Si el constraint de conflicto es sobre 'id', reintentar
+          if (error.message?.includes('conflict') || error.message?.includes('constraint')) {
+            const { error: idErr } = await client
+              .from(table)
+              .upsert(itemRecord, { onConflict: 'id' });
+            if (!idErr) break;
+          }
+          console.warn(`Nota upsert en ${table}:`, error.message);
+        }
+      } catch (dbErr) {
+        console.warn(`Nota: guardado en tabla ${table} omitido:`, dbErr);
+      }
     }
   }
 }
 
 /**
  * 1. Verifica si una sesión con el PIN provisto ya existe en Supabase
- * Consulta tanto la tabla 'audit_sessions' como 'audit_counts'
+ * Consulta tanto la tabla 'audit_sessions' como 'audit_items' / 'audit_counts'
  */
 export async function checkSessionExistsInSupabase(pin: string): Promise<{
   configured: boolean;
@@ -425,9 +468,9 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
       }
     }
 
-    // 2. SELECT en audit_counts / inventory_counts / counts para cargar los conteos actuales
+    // 2. SELECT en audit_items / audit_counts / inventory_counts / counts para cargar los conteos actuales
     let countsRows: any[] = [];
-    const countTables = ['audit_counts', 'inventory_counts', 'counts'];
+    const countTables = ['audit_items', 'audit_counts', 'inventory_counts', 'counts'];
     for (const table of countTables) {
       try {
         const { data: countsData, error: countsErr } = await client
@@ -447,12 +490,25 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
 
     const hasSession = !!sessionRecord || countsRows.length > 0;
     if (!hasSession) {
+      // Verificar si existe en almacenamiento local para sincronización inmediata
+      const localSession = localStorage.getItem(`odoo_audit_local_session_${pin}`);
+      if (localSession) {
+        try {
+          const parsed = JSON.parse(localSession);
+          return {
+            configured: true,
+            exists: true,
+            session: parsed,
+            counts: [],
+          };
+        } catch {}
+      }
       return { configured: true, exists: false };
     }
 
     const counts: RealtimeCountUpdate[] = countsRows.map((row) => ({
-      quantId: Number(row.quant_id),
-      countedQuantity: Number(row.counted_quantity),
+      quantId: Number(row.quant_id || row.product_id || 0),
+      countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
       auditorName: row.auditor_name || 'Auditor',
       timestamp: row.updated_at || row.created_at || new Date().toISOString(),
       pin: row.pin,
@@ -586,40 +642,72 @@ export async function registerSessionInSupabase(
 
   for (const table of sessionTables) {
     try {
-      // Usar esquema verificado en Supabase (pin, auditor_name, status, created_at)
-      const payload: Record<string, any> = {
+      // 1. Intentar con todos los campos disponibles si la tabla tiene el esquema completo
+      const fullPayload: Record<string, any> = {
+        id: sessionId,
         pin: session.pin,
         auditor_name: session.auditorName || 'Auditor',
+        company_name: session.companyName || null,
+        company_id: session.companyId || null,
+        location_name: session.locationName || null,
+        location_id: session.locationId || null,
+        category_name: session.categoryName || null,
+        category_id: session.categoryId || null,
+        odoo_url: odooConfig?.url || null,
+        odoo_db: odooConfig?.db || null,
         status: 'active',
         created_at: session.createdAt || now,
+        updated_at: now,
       };
 
-      // Intentar UPSERT por PIN
-      const { error } = await client
+      const { error: fullError } = await client
         .from(table)
-        .upsert(payload, { onConflict: 'pin' });
+        .upsert(fullPayload, { onConflict: 'pin' });
 
-      if (!error) {
+      if (!fullError) {
         console.info(`✓ Sesión PIN ${session.pin} guardada en tabla '${table}' de Supabase (UPSERT exitoso)`);
         saved = true;
         break;
-      } else {
-        lastError = error.message;
-        // Si hay una advertencia de RLS (seguridad a nivel de filas)
-        if (
-          error.code === '42501' ||
-          error.message?.toLowerCase().includes('row-level security') ||
-          error.message?.toLowerCase().includes('permission denied')
-        ) {
-          console.warn(`Aviso RLS en '${table}': ${error.message}. Guardando copia local para acceso inmediato.`);
-          try {
-            localStorage.setItem(`odoo_audit_local_session_${session.pin}`, JSON.stringify(session));
-          } catch {}
-          return {
-            success: true,
-            isLocal: false,
-          };
+      }
+
+      // Si falla por columna inexistente (schema reducido), intentar solo con columnas básicas
+      if (fullError.message?.toLowerCase().includes('column') || fullError.code === '42703') {
+        const basicPayload = {
+          pin: session.pin,
+          auditor_name: session.auditorName || 'Auditor',
+          status: 'active',
+          created_at: session.createdAt || now,
+        };
+        const { error: basicError } = await client
+          .from(table)
+          .upsert(basicPayload, { onConflict: 'pin' });
+
+        if (!basicError) {
+          console.info(`✓ Sesión PIN ${session.pin} guardada en tabla '${table}' de Supabase (columnas básicas)`);
+          saved = true;
+          break;
+        } else {
+          lastError = basicError.message;
         }
+      } else {
+        lastError = fullError.message;
+      }
+
+      // Si hay una advertencia de RLS (seguridad a nivel de filas)
+      if (
+        fullError?.code === '42501' ||
+        fullError?.message?.toLowerCase().includes('row-level security') ||
+        fullError?.message?.toLowerCase().includes('permission denied')
+      ) {
+        console.warn(`Aviso RLS en '${table}': ${fullError.message}. Guardando copia local para acceso inmediato.`);
+        try {
+          localStorage.setItem(`odoo_audit_local_session_${session.pin}`, JSON.stringify(session));
+        } catch {}
+        return {
+          success: true,
+          isLocal: false,
+          error: 'RLS_WARNING',
+        };
       }
     } catch (err: any) {
       lastError = err?.message || String(err);
@@ -668,14 +756,18 @@ export async function updateSessionCategoryInSupabase(
 }
 
 /**
- * Script SQL para inicializar las tablas 'audit_sessions' y 'audit_counts' en Supabase
+ * Script SQL para inicializar las tablas 'audit_sessions', 'audit_items' y 'audit_counts' en Supabase
  */
-export const SUPABASE_SQL_SCHEMA = `
--- 1. Tabla de sesiones de auditoría colaborativas
+export const SUPABASE_SQL_SCHEMA = `-- =========================================================================
+-- SCRIPT SQL SUPABASE: Tablas y Políticas RLS para Odoo Inventory Auditor
+-- Copiar y ejecutar en Supabase Dashboard > SQL Editor > New Query > Run
+-- =========================================================================
+
+-- 1. TABLA: audit_sessions
 CREATE TABLE IF NOT EXISTS public.audit_sessions (
     id TEXT PRIMARY KEY,
     pin VARCHAR(10) NOT NULL UNIQUE,
-    lead_name VARCHAR(100) NOT NULL,
+    auditor_name VARCHAR(100) NOT NULL,
     company_name VARCHAR(150),
     company_id INTEGER,
     location_name VARCHAR(200),
@@ -685,35 +777,99 @@ CREATE TABLE IF NOT EXISTS public.audit_sessions (
     odoo_url TEXT,
     odoo_db TEXT,
     status VARCHAR(20) DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Tabla de conteos físicos por quant
-CREATE TABLE IF NOT EXISTS public.audit_counts (
-    id BIGSERIAL PRIMARY KEY,
+-- 2. TABLA: audit_items (Productos/conteos auditados en tiempo real por PIN)
+CREATE TABLE IF NOT EXISTS public.audit_items (
+    id TEXT PRIMARY KEY,
     pin VARCHAR(10) NOT NULL,
     quant_id BIGINT NOT NULL,
+    product_id BIGINT,
+    product_name TEXT,
+    barcode TEXT,
     counted_quantity NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    qty NUMERIC(12, 2) NOT NULL DEFAULT 0,
     auditor_name VARCHAR(100) NOT NULL,
     photo_url TEXT,
     notes TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT audit_items_pin_quant_unique UNIQUE (pin, quant_id)
+);
+
+-- 3. TABLA: audit_counts (Compatibilidad previa)
+CREATE TABLE IF NOT EXISTS public.audit_counts (
+    id TEXT PRIMARY KEY,
+    pin VARCHAR(10) NOT NULL,
+    quant_id BIGINT NOT NULL,
+    product_id BIGINT,
+    product_name TEXT,
+    barcode TEXT,
+    counted_quantity NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    qty NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    auditor_name VARCHAR(100) NOT NULL,
+    photo_url TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT audit_counts_pin_quant_unique UNIQUE (pin, quant_id)
 );
 
--- Habilitar Realtime para ambas tablas
-ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_counts;
-
--- Políticas de seguridad permisivas (RLS)
+-- 4. HABILITAR ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.audit_sessions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Permitir acceso a sesiones de auditoría" ON public.audit_sessions
-    FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.audit_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.audit_counts ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.audit_counts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Permitir lectura y escritura por PIN" ON public.audit_counts
-    FOR ALL USING (true) WITH CHECK (true);
+-- 5. POLÍTICAS RLS PÚBLICAS PARA CLAVE ANON / PUBLISHABLE
+DROP POLICY IF EXISTS "Public select sessions" ON public.audit_sessions;
+CREATE POLICY "Public select sessions" ON public.audit_sessions
+    FOR SELECT TO public USING (true);
+
+DROP POLICY IF EXISTS "Public all sessions" ON public.audit_sessions;
+CREATE POLICY "Public all sessions" ON public.audit_sessions
+    FOR ALL TO public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public select items" ON public.audit_items;
+CREATE POLICY "Public select items" ON public.audit_items
+    FOR SELECT TO public USING (true);
+
+DROP POLICY IF EXISTS "Public all items" ON public.audit_items;
+CREATE POLICY "Public all items" ON public.audit_items
+    FOR ALL TO public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public all counts" ON public.audit_counts;
+CREATE POLICY "Public all counts" ON public.audit_counts
+    FOR ALL TO public USING (true) WITH CHECK (true);
+
+-- 6. HABILITAR REALTIME
+ALTER TABLE public.audit_sessions REPLICA IDENTITY FULL;
+ALTER TABLE public.audit_items REPLICA IDENTITY FULL;
+ALTER TABLE IF EXISTS public.audit_counts REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'audit_sessions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_sessions;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'audit_items'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_items;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'audit_counts'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_counts;
+  END IF;
+END $$;
 `;
 
