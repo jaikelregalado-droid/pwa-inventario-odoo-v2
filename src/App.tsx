@@ -415,6 +415,7 @@ export default function App() {
 
     const now = new Date().toISOString();
     const targetItem = items.find((it) => it.id === quantId);
+    const cleanCount = Math.round(newCount * 1000) / 1000;
 
     // Actualizar estado local inmediatamente para latencia cero en UI
     setItems((prev) =>
@@ -422,8 +423,8 @@ export default function App() {
         if (item.id === quantId) {
           return {
             ...item,
-            countedQuantity: newCount,
-            difference: newCount - item.quantity,
+            countedQuantity: cleanCount,
+            difference: Math.round((cleanCount - item.quantity) * 1000) / 1000,
             lastAuditedBy: session.auditorName,
             lastAuditedAt: now,
             photoUrl: photoUrl !== undefined ? photoUrl : item.photoUrl,
@@ -440,7 +441,7 @@ export default function App() {
       productId: targetItem?.productId,
       productName: targetItem?.productName,
       barcode: targetItem?.barcode,
-      countedQuantity: newCount,
+      countedQuantity: cleanCount,
       systemQuantity: targetItem?.quantity,
       isLocked: targetItem?.isLocked ?? false,
       auditorName: session.auditorName,
@@ -547,7 +548,7 @@ export default function App() {
       setFocusedQuantId(found.id);
 
       // Sumar o abrir el conteo de inmediato (+1 a la cantidad contada actual)
-      const nextCount = Math.round(((found.countedQuantity || 0) + 1) * 100) / 100;
+      const nextCount = Math.round(((found.countedQuantity || 0) + 1) * 1000) / 1000;
       handleUpdateCount(found.id, nextCount);
 
       setSearchQuery('');

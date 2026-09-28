@@ -403,13 +403,23 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
         .from('audit_items')
         .upsert(enrichedRecord, { onConflict: 'pin,product_id' });
 
+      // Si la columna qty en Supabase fue configurada como integer (código de error 22P02),
+      // reintentar redondeando qty pero conservando el valor decimal exacto de hasta 3 dígitos en counted_quantity
+      if (itemError && (itemError.code === '22P02' || itemError.message?.includes('integer'))) {
+        enrichedRecord.qty = Math.round(update.countedQuantity);
+        const resRetry = await client
+          .from('audit_items')
+          .upsert(enrichedRecord, { onConflict: 'pin,product_id' });
+        itemError = resRetry.error;
+      }
+
       // Si falla porque alguna columna aún no existe en Supabase (ej: auditor_name, quant_id)
       if (itemError && (itemError.code === 'PGRST204' || itemError.message?.includes('column'))) {
         const basicRecord = {
           id: `${update.pin}_${pId}`,
           pin: update.pin,
           product_id: pId,
-          qty: update.countedQuantity,
+          qty: Math.round(update.countedQuantity),
           is_locked: update.isLocked ?? false,
           updated_at: update.timestamp,
         };
@@ -425,7 +435,7 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
           id: `${update.pin}_${pId}`,
           pin: update.pin,
           product_id: pId,
-          qty: update.countedQuantity,
+          qty: Math.round(update.countedQuantity),
           is_locked: update.isLocked ?? false,
           updated_at: update.timestamp,
         };
@@ -886,9 +896,9 @@ CREATE TABLE IF NOT EXISTS public.audit_items (
     quant_id BIGINT,
     product_name TEXT,
     barcode TEXT,
-    system_quantity NUMERIC(12, 2) DEFAULT 0,
-    counted_quantity NUMERIC(12, 2) NOT NULL DEFAULT 0,
-    qty NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    system_quantity NUMERIC(14, 3) DEFAULT 0,
+    counted_quantity NUMERIC(14, 3) NOT NULL DEFAULT 0,
+    qty NUMERIC(14, 3) NOT NULL DEFAULT 0,
     is_locked BOOLEAN DEFAULT FALSE,
     auditor_name VARCHAR(100),
     photo_url TEXT,
@@ -898,20 +908,26 @@ CREATE TABLE IF NOT EXISTS public.audit_items (
     CONSTRAINT audit_items_pin_product_unique UNIQUE (pin, product_id)
 );
 
--- Asegurar columnas si la tabla audit_items ya existía
+-- Asegurar columnas si la tabla audit_items ya existía y admitir hasta 3 decimales
 ALTER TABLE IF EXISTS public.audit_items 
     ADD COLUMN IF NOT EXISTS product_id BIGINT,
     ADD COLUMN IF NOT EXISTS quant_id BIGINT,
     ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS system_quantity NUMERIC(12, 2) DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS counted_quantity NUMERIC(12, 2) DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS qty NUMERIC(12, 2) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS system_quantity NUMERIC(14, 3) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS counted_quantity NUMERIC(14, 3) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS qty NUMERIC(14, 3) DEFAULT 0,
     ADD COLUMN IF NOT EXISTS product_name TEXT,
     ADD COLUMN IF NOT EXISTS barcode TEXT,
     ADD COLUMN IF NOT EXISTS auditor_name VARCHAR(100),
     ADD COLUMN IF NOT EXISTS photo_url TEXT,
     ADD COLUMN IF NOT EXISTS notes TEXT,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Modificar columnas numéricas para admitir hasta 3 decimales (peso, fracciones, litros)
+ALTER TABLE IF EXISTS public.audit_items 
+    ALTER COLUMN counted_quantity TYPE NUMERIC(14, 3) USING counted_quantity::numeric,
+    ALTER COLUMN qty TYPE NUMERIC(14, 3) USING qty::numeric,
+    ALTER COLUMN system_quantity TYPE NUMERIC(14, 3) USING system_quantity::numeric;
 
 DO $$
 BEGIN

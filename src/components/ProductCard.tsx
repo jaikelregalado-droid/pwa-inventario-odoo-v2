@@ -48,6 +48,34 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const [batchMode, setBatchMode] = useState<'add' | 'replace'>('add'); // 'add' = Sumar al acumulado, 'replace' = Corregir/reemplazar total
   const batchInputRef = useRef<HTMLInputElement>(null);
 
+  // Función de formateo en tiempo real: reemplaza automáticamente comas por puntos y admite hasta 3 decimales
+  const sanitizeDecimalInput = (raw: string): string => {
+    if (!raw) return '';
+    // 1. Reemplazar todas las comas por puntos
+    let sanitized = raw.replace(/,/g, '.');
+    // 2. Permitir solo dígitos numéricos y punto
+    sanitized = sanitized.replace(/[^0-9.]/g, '');
+    // 3. Si hay más de un punto, conservar únicamente el primero
+    const parts = sanitized.split('.');
+    if (parts.length > 2) {
+      sanitized = parts[0] + '.' + parts.slice(1).join('');
+    }
+    // 4. Limitar a máximo 3 decimales (peso / fracciones)
+    if (parts.length === 2 && parts[1].length > 3) {
+      sanitized = parts[0] + '.' + parts[1].slice(0, 3);
+    }
+    return sanitized;
+  };
+
+  // Convierte un string a float seguro con redondeo de hasta 3 decimales
+  const parseSafeFloat = (val: string | number | undefined | null): number => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val * 1000) / 1000;
+    const sanitized = sanitizeDecimalInput(String(val));
+    const parsed = parseFloat(sanitized);
+    return isNaN(parsed) ? 0 : Math.round(parsed * 1000) / 1000;
+  };
+
   const openBatchModal = (mode: 'add' | 'replace' = 'add') => {
     setBatchMode(mode);
     setBatchInputValue('');
@@ -60,18 +88,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const handleConfirmBatch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const inputNum = parseFloat(batchInputValue);
+    const sanitized = sanitizeDecimalInput(batchInputValue);
+    const inputNum = parseFloat(sanitized);
     if (isNaN(inputNum)) {
       setShowBatchModal(false);
       return;
     }
 
-    const currentCount = parseFloat(localQC) || 0;
-    // Fórmula: Si modo Suma -> QC_actual + Valor_ingresado (ej: 15 + 20 = 35)
-    // Fórmula: Si modo Reemplazar -> Valor_ingresado (ej: 20 sustituye a 15)
+    const currentCount = parseSafeFloat(localQC);
+    // Fórmula: Si modo Suma -> QC_actual + Valor_ingresado (ej: 15 + 20 = 35 ó 2.51 + 1.25 = 3.76)
+    // Fórmula: Si modo Reemplazar -> Valor_ingresado (ej: 2.51 sustituye a 15)
     const nextQC = batchMode === 'add'
-      ? Math.max(0, Math.round((currentCount + inputNum) * 100) / 100)
-      : Math.max(0, Math.round(inputNum * 100) / 100);
+      ? Math.max(0, Math.round((currentCount + inputNum) * 1000) / 1000)
+      : Math.max(0, Math.round(inputNum * 1000) / 1000);
 
     sound.playCountUp();
     commitCount(nextQC);
@@ -79,8 +108,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const applyPreset = (preset: number) => {
-    const currentEntered = parseFloat(batchInputValue) || 0;
-    setBatchInputValue(String(currentEntered + preset));
+    const currentEntered = parseSafeFloat(batchInputValue);
+    const nextVal = Math.round((currentEntered + preset) * 1000) / 1000;
+    setBatchInputValue(String(nextVal));
     batchInputRef.current?.focus();
   };
 
@@ -97,7 +127,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   }, [isFocused]);
 
   const commitCount = (val: number, photo?: string) => {
-    const validNumber = Math.max(0, isNaN(val) ? 0 : Math.round(val * 100) / 100);
+    // Admite hasta 3 decimales para productos por peso o fracción
+    const validNumber = Math.max(0, isNaN(val) ? 0 : Math.round(val * 1000) / 1000);
     setLocalQC(String(validNumber));
     onUpdateCount(item.id, validNumber, photo !== undefined ? photo : item.photoUrl);
 
@@ -106,16 +137,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalQC(e.target.value);
+    const formatted = sanitizeDecimalInput(e.target.value);
+    setLocalQC(formatted);
   };
 
   const handleInputBlur = () => {
-    const parsed = parseFloat(localQC);
+    const sanitized = sanitizeDecimalInput(localQC);
+    const parsed = parseFloat(sanitized);
     if (!isNaN(parsed) && parsed !== item.countedQuantity) {
       sound.playCountUp();
       commitCount(parsed);
     } else if (isNaN(parsed)) {
       setLocalQC(String(item.countedQuantity));
+    } else {
+      setLocalQC(String(Math.round(parsed * 1000) / 1000));
     }
   };
 
@@ -126,8 +161,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const increment = (delta: number) => {
-    const current = parseFloat(localQC) || 0;
-    const nextVal = Math.max(0, current + delta);
+    const current = parseSafeFloat(localQC);
+    const nextVal = Math.max(0, Math.round((current + delta) * 1000) / 1000);
     if (delta > 0) {
       sound.playCountUp();
     } else {
@@ -159,9 +194,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     commitCount(item.countedQuantity, '');
   };
 
-  // Cálculo de Diferencia
-  const currentCounted = parseFloat(localQC) || 0;
-  const difference = currentCounted - item.quantity;
+  // Cálculo de Diferencia (soporta hasta 3 decimales para productos por peso o fracción)
+  const currentCounted = parseSafeFloat(localQC);
+  const difference = Math.round((currentCounted - item.quantity) * 1000) / 1000;
   const isExact = difference === 0;
   const isSurplus = difference > 0;
   const isDeficit = difference < 0;
@@ -325,21 +360,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <Minus className="w-5 h-5 text-rose-400" />
             </button>
 
-            {/* Input Editable Directo para números rápidos */}
+            {/* Input Editable Directo para números enteros o decimales (inputMode="decimal") */}
             <div className="relative w-28">
               <input
-                type="number"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                min="0"
-                step="any"
+                type="text"
+                inputMode="decimal"
                 value={localQC}
                 onChange={handleInputChange}
                 onBlur={handleInputBlur}
                 onKeyDown={handleKeyDown}
                 className="w-full h-[46px] rounded-xl bg-slate-950 border-2 border-indigo-500/60 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 text-center font-mono text-xl font-bold text-white transition outline-none"
                 placeholder="0"
-                title="Escribe la cantidad contada directamente"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                title="Escribe la cantidad contada con decimales (ej. 2.51)"
               />
             </div>
 
@@ -493,33 +528,33 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Modal/Cuadro de Diálogo Numérico Rápido para Ingreso por Lote y Corrección */}
       {showBatchModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in"
           onClick={() => setShowBatchModal(false)}
         >
           <div
-            className="relative max-w-md w-full bg-slate-900 border border-slate-700/80 rounded-3xl overflow-hidden shadow-2xl p-5 text-slate-100"
+            className="relative max-w-md w-full max-h-[85vh] bg-slate-900 border border-slate-700/80 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-slate-100"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Cabecera del modal */}
-            <div className="flex items-start justify-between pb-3 border-b border-slate-800">
-              <div className="space-y-1 pr-2">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-500/40 text-indigo-400 font-mono text-[11px] font-bold">
-                    <Layers className="w-3 h-3" />
+            {/* 1. Cabecera fija superior */}
+            <div className="shrink-0 px-4 pt-3.5 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 border-b border-slate-800/90 bg-slate-900/95 flex items-start justify-between gap-2">
+              <div className="space-y-0.5 min-w-0 pr-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-950/80 border border-indigo-500/40 text-indigo-400 font-mono text-[10px] font-bold">
+                    <Layers className="w-2.5 h-2.5" />
                     Quant #{item.id}
                   </span>
                   {item.defaultCode && (
-                    <span className="text-[11px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
                       Ref: {item.defaultCode}
                     </span>
                   )}
                   {item.barcode && (
-                    <span className="text-[11px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
                       EAN: {item.barcode}
                     </span>
                   )}
                 </div>
-                <h4 className="text-sm font-bold text-white leading-snug line-clamp-2">
+                <h4 className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-1">
                   {item.productName}
                 </h4>
               </div>
@@ -527,81 +562,83 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <button
                 type="button"
                 onClick={() => setShowBatchModal(false)}
-                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer transition shrink-0"
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer transition shrink-0"
+                aria-label="Cerrar modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Conmutador de Modo: Sumar al Acumulado vs Reemplazar / Corregir Total */}
-            <div className="mt-4 p-1 rounded-2xl bg-slate-950 border border-slate-800 flex gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setBatchMode('add');
-                  batchInputRef.current?.focus();
-                }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer select-none ${
-                  batchMode === 'add'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Sumar al Acumulado</span>
-              </button>
+            {/* 2. Cuerpo desplazable (scroll interno optimizado para max-h: 85vh) */}
+            <form
+              id={`batch-form-${item.id}`}
+              onSubmit={handleConfirmBatch}
+              className="flex-1 overflow-y-auto px-4 py-3 sm:px-5 sm:py-3.5 space-y-2.5 sm:space-y-3"
+            >
+              {/* Conmutador de Modo: Sumar al Acumulado vs Reemplazar / Corregir Total */}
+              <div className="p-1 rounded-xl bg-slate-950 border border-slate-800 flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchMode('add');
+                    batchInputRef.current?.focus();
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer select-none ${
+                    batchMode === 'add'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  <span>Sumar al Acumulado</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setBatchMode('replace');
-                  batchInputRef.current?.focus();
-                }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer select-none ${
-                  batchMode === 'replace'
-                    ? 'bg-amber-600 text-white shadow-md shadow-amber-950'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>Reemplazar / Corregir Total</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchMode('replace');
+                    batchInputRef.current?.focus();
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer select-none ${
+                    batchMode === 'replace'
+                      ? 'bg-amber-600 text-white shadow-md shadow-amber-950'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Corregir Total</span>
+                </button>
+              </div>
 
-            {/* Información del Estado Actual */}
-            <div className="mt-3.5 flex items-center justify-between p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs">
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase tracking-wider text-slate-400">QS (Sistema)</span>
-                <span className="font-extrabold text-slate-200 text-sm">{item.quantity} uds.</span>
+              {/* Información del Estado Actual en 1 fila compacta */}
+              <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-slate-950/70 border border-slate-800/80 text-center">
+                <div className="flex flex-col items-center justify-center">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-400">QS (Sistema)</span>
+                  <span className="font-extrabold text-slate-200 text-xs sm:text-sm">{item.quantity} uds.</span>
+                </div>
+                <div className="flex flex-col items-center justify-center border-x border-slate-800/80 px-1">
+                  <span className="text-[9px] uppercase tracking-wider text-indigo-400 font-medium">QC Actual</span>
+                  <span className="font-black text-indigo-300 text-xs sm:text-sm">{parseFloat(localQC) || 0} uds.</span>
+                </div>
+                <div className="flex flex-col items-center justify-center">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-400">Operación</span>
+                  <span className={`font-bold text-[10px] sm:text-xs truncate ${batchMode === 'add' ? 'text-indigo-400' : 'text-amber-400'}`}>
+                    {batchMode === 'add' ? '+ Suma Lote' : 'Sustitución'}
+                  </span>
+                </div>
               </div>
-              <div className="h-6 w-px bg-slate-800" />
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium">QC Actual (Contado)</span>
-                <span className="font-black text-indigo-300 text-base">{parseFloat(localQC) || 0} uds.</span>
-              </div>
-              <div className="h-6 w-px bg-slate-800" />
-              <div className="flex flex-col items-end">
-                <span className="text-[10px] uppercase tracking-wider text-slate-400">Operación</span>
-                <span className={`font-bold text-xs ${batchMode === 'add' ? 'text-indigo-400' : 'text-amber-400'}`}>
-                  {batchMode === 'add' ? 'Suma (+ Lote)' : 'Sustitución'}
-                </span>
-              </div>
-            </div>
 
-            {/* Formulario de Entrada */}
-            <form onSubmit={handleConfirmBatch} className="mt-4 space-y-4">
-              <div className="space-y-1.5">
+              {/* Formulario de Entrada */}
+              <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <label htmlFor={`batch-input-${item.id}`} className="font-medium text-slate-300">
-                    {batchMode === 'add'
-                      ? 'Cantidad del lote a sumar (+):'
-                      : 'Nueva cantidad total sustituta:'}
+                  <label htmlFor={`batch-input-${item.id}`} className="font-medium text-slate-300 text-[11px] sm:text-xs">
+                    {batchMode === 'add' ? 'Cantidad a sumar (+):' : 'Nueva cantidad total:'}
                   </label>
                   {batchInputValue && (
                     <button
                       type="button"
                       onClick={() => setBatchInputValue('')}
-                      className="text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer"
+                      className="text-[10px] sm:text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer"
                     >
                       Limpiar
                     </button>
@@ -612,36 +649,40 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   <input
                     ref={batchInputRef}
                     id={`batch-input-${item.id}`}
-                    type="number"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    min="0"
-                    step="any"
+                    type="text"
+                    inputMode="decimal"
                     autoFocus
                     value={batchInputValue}
-                    onChange={(e) => setBatchInputValue(e.target.value)}
+                    onChange={(e) => {
+                      const formatted = sanitizeDecimalInput(e.target.value);
+                      setBatchInputValue(formatted);
+                    }}
                     placeholder="0"
-                    className={`w-full py-3.5 px-4 rounded-2xl bg-slate-950 border-2 text-center font-mono text-3xl font-black text-white outline-none transition ${
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    className={`w-full py-2.5 sm:py-3 px-3 rounded-xl bg-slate-950 border-2 text-center font-mono text-2xl sm:text-3xl font-black text-white outline-none transition ${
                       batchMode === 'add'
-                        ? 'border-indigo-500/70 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/20'
-                        : 'border-amber-500/70 focus:border-amber-400 focus:ring-4 focus:ring-amber-500/20'
+                        ? 'border-indigo-500/70 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20'
+                        : 'border-amber-500/70 focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20'
                     }`}
                   />
                 </div>
               </div>
 
-              {/* Botones de Presets Rápidos (+1, +5, +10, +20, +50, +100) */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-                  {batchMode === 'add' ? 'Atajos para sumar al lote:' : 'Atajos numéricos:'}
-                </span>
-                <div className="grid grid-cols-6 gap-1.5">
+              {/* Atajos Rápidos Compactos (+1, +5, +10, +20, +50, +100) */}
+              <div className="space-y-1">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center justify-between">
+                  <span>{batchMode === 'add' ? 'Atajos para sumar:' : 'Atajos numéricos:'}</span>
+                  <span className="text-[9px] text-slate-500">Un toque para agregar</span>
+                </div>
+                <div className="grid grid-cols-6 gap-1">
                   {[1, 5, 10, 20, 50, 100].map((preset) => (
                     <button
                       key={preset}
                       type="button"
                       onClick={() => applyPreset(preset)}
-                      className="py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 font-mono text-xs font-bold text-slate-200 hover:text-white transition cursor-pointer select-none"
+                      className="py-1 px-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 font-mono text-xs font-bold text-slate-200 hover:text-white transition cursor-pointer select-none text-center"
                     >
                       +{preset}
                     </button>
@@ -650,48 +691,48 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </div>
 
               {/* Tarjeta de Cálculo y Fórmula en Tiempo Real */}
-              <div className={`p-3 rounded-2xl border text-xs space-y-1.5 ${
+              <div className={`p-2 sm:p-2.5 rounded-xl border text-[11px] sm:text-xs space-y-1 ${
                 batchMode === 'add'
                   ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-200'
                   : 'bg-amber-950/30 border-amber-500/30 text-amber-200'
               }`}>
-                <div className="flex items-center justify-between font-medium">
-                  <span className="flex items-center gap-1.5 text-slate-300">
-                    <Calculator className="w-3.5 h-3.5" />
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span className="flex items-center gap-1 font-medium text-slate-300">
+                    <Calculator className="w-3 h-3 text-indigo-400" />
                     <span>Fórmula en tiempo real:</span>
                   </span>
-                  <span className="font-mono text-slate-400 text-[11px]">
-                    {batchMode === 'add' ? 'Nuevo QC = QC_actual + Lote' : 'Nuevo QC = Valor ingresado'}
+                  <span className="font-mono">
+                    {batchMode === 'add' ? 'QC_actual + Lote' : 'Sustitución directa'}
                   </span>
                 </div>
 
-                <div className="text-sm font-mono font-bold text-white flex items-center justify-between pt-1 border-t border-slate-800/80">
+                <div className="text-xs sm:text-sm font-mono font-bold text-white flex items-center justify-between pt-0.5 border-t border-slate-800/80">
                   {batchMode === 'add' ? (
                     <>
-                      <span>{parseFloat(localQC) || 0} + {parseFloat(batchInputValue) || 0}</span>
-                      <ArrowRight className="w-4 h-4 text-indigo-400" />
-                      <span className="text-lg font-black text-indigo-300">
-                        {Math.max(0, Math.round(((parseFloat(localQC) || 0) + (parseFloat(batchInputValue) || 0)) * 100) / 100)} uds.
+                      <span>{parseSafeFloat(localQC)} + {parseSafeFloat(batchInputValue)}</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <span className="text-sm sm:text-base font-black text-indigo-300">
+                        {Math.max(0, Math.round((parseSafeFloat(localQC) + parseSafeFloat(batchInputValue)) * 1000) / 1000)} uds.
                       </span>
                     </>
                   ) : (
                     <>
-                      <span className="line-through text-slate-500">{parseFloat(localQC) || 0}</span>
-                      <ArrowRight className="w-4 h-4 text-amber-400" />
-                      <span className="text-lg font-black text-amber-300">
-                        {Math.max(0, Math.round((parseFloat(batchInputValue) || 0) * 100) / 100)} uds.
+                      <span className="line-through text-slate-500">{parseSafeFloat(localQC)}</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="text-sm sm:text-base font-black text-amber-300">
+                        {Math.max(0, parseSafeFloat(batchInputValue))} uds.
                       </span>
                     </>
                   )}
                 </div>
 
-                <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
+                <div className="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
                   <span>Diferencia vs Sistema ({item.quantity}):</span>
                   {(() => {
                     const finalQC = batchMode === 'add'
-                      ? Math.max(0, Math.round(((parseFloat(localQC) || 0) + (parseFloat(batchInputValue) || 0)) * 100) / 100)
-                      : Math.max(0, Math.round((parseFloat(batchInputValue) || 0) * 100) / 100);
-                    const finalDiff = Math.round((finalQC - item.quantity) * 100) / 100;
+                      ? Math.max(0, Math.round((parseSafeFloat(localQC) + parseSafeFloat(batchInputValue)) * 1000) / 1000)
+                      : Math.max(0, parseSafeFloat(batchInputValue));
+                    const finalDiff = Math.round((finalQC - item.quantity) * 1000) / 1000;
                     return (
                       <span className={`font-mono font-bold ${
                         finalDiff === 0
@@ -706,35 +747,36 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   })()}
                 </div>
               </div>
-
-              {/* Botones de acción */}
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowBatchModal(false)}
-                  className="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={!batchInputValue.trim() && batchInputValue !== '0'}
-                  className={`flex-2 py-3 px-4 rounded-xl text-white font-black text-xs sm:text-sm shadow-xl transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 ${
-                    batchMode === 'add'
-                      ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-950'
-                      : 'bg-amber-600 hover:bg-amber-500 shadow-amber-950'
-                  }`}
-                >
-                  <Check className="w-4 h-4" />
-                  <span>
-                    {batchMode === 'add'
-                      ? `Confirmar y Sumar (+${parseFloat(batchInputValue) || 0})`
-                      : `Confirmar Total (${parseFloat(batchInputValue) || 0})`}
-                  </span>
-                </button>
-              </div>
             </form>
+
+            {/* 3. Botones de acción fijados permanentemente en la parte inferior */}
+            <div className="shrink-0 px-4 py-2.5 sm:px-5 sm:py-3 bg-slate-950/95 border-t border-slate-800 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchModal(false)}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs transition cursor-pointer text-center"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="submit"
+                form={`batch-form-${item.id}`}
+                disabled={!batchInputValue.trim() && batchInputValue !== '0'}
+                className={`flex-2 py-2.5 px-3 rounded-xl text-white font-black text-xs sm:text-sm shadow-lg transition active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 ${
+                  batchMode === 'add'
+                    ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-950'
+                    : 'bg-amber-600 hover:bg-amber-500 shadow-amber-950'
+                }`}
+              >
+                <Check className="w-4 h-4 shrink-0" />
+                <span className="truncate">
+                  {batchMode === 'add'
+                    ? `Confirmar y Sumar (${parseSafeFloat(batchInputValue) ? `+${parseSafeFloat(batchInputValue)}` : '0'})`
+                    : `Confirmar Total (${parseSafeFloat(batchInputValue)})`}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}
