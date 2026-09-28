@@ -48,6 +48,7 @@ export interface QuantItem {
   inventoryQuantity: number;      // Cantidad en inventario registrada previamente en Odoo
   countedQuantity: number;        // QC: Cantidad Contada en físico por los auditores
   difference: number;             // DQ: QC - QS (Diferencia)
+  isLocked?: boolean;             // Candado de inmovilización: congela la cantidad del sistema (QS)
   lastAuditedBy?: string;         // Nombre del auditor que hizo el último conteo
   lastAuditedAt?: string;         // Marca de tiempo ISO
   photoUrl?: string;              // Imagen de evidencia capturada desde la cámara móvil
@@ -71,7 +72,12 @@ export interface AuditSession {
 
 export interface RealtimeCountUpdate {
   quantId: number;
+  productId?: number;
+  productName?: string;
+  barcode?: string;
   countedQuantity: number;
+  systemQuantity?: number;
+  isLocked?: boolean;
   auditorName: string;
   timestamp: string;
   pin: string;

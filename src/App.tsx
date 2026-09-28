@@ -188,14 +188,26 @@ export default function App() {
           const remoteCounts = await fetchSessionCountsFromSupabase(activePin);
           const effectiveCounts = remoteCounts.length > 0 ? remoteCounts : (cachedCounts || []);
           if (effectiveCounts.length > 0) {
-            const countsMap = new Map(effectiveCounts.map((c) => [c.quantId, c]));
+            const productCountsMap = new Map<number, RealtimeCountUpdate>();
+            const quantCountsMap = new Map<number, RealtimeCountUpdate>();
+            for (const c of effectiveCounts) {
+              if (c.productId) productCountsMap.set(c.productId, c);
+              if (c.quantId) quantCountsMap.set(c.quantId, c);
+            }
+
             filteredQuants = filteredQuants.map((item) => {
-              const remote = countsMap.get(item.id);
+              const remote = (item.productId && productCountsMap.get(item.productId)) || quantCountsMap.get(item.id);
               if (remote) {
+                const isLocked = Boolean(remote.isLocked);
+                const effectiveSysQty = (isLocked && remote.systemQuantity !== undefined && remote.systemQuantity !== null)
+                  ? remote.systemQuantity
+                  : item.quantity;
                 return {
                   ...item,
+                  quantity: effectiveSysQty,
                   countedQuantity: remote.countedQuantity,
-                  difference: remote.countedQuantity - item.quantity,
+                  difference: remote.countedQuantity - effectiveSysQty,
+                  isLocked,
                   lastAuditedBy: remote.auditorName,
                   lastAuditedAt: remote.timestamp,
                   photoUrl: remote.photoUrl || item.photoUrl,
@@ -224,17 +236,47 @@ export default function App() {
       // Consulta de 100% de productos filtrados por categ_id sin truncar a 500
       const quantsData = await fetchQuants(cfg, locId, targetCatId);
 
-      // Recuperar el estado actual del inventario y los conteos realizados por otros auditores desde Supabase (SELECT)
+      // Si habían productos inmovilizados (is_locked) en la sesión actual, proteger su QS
+      if (items.length > 0) {
+        const lockedMap = new Map<number, number>();
+        for (const it of items) {
+          if (it.isLocked) {
+            lockedMap.set(it.productId, it.quantity);
+          }
+        }
+        for (const item of quantsData) {
+          if (lockedMap.has(item.productId)) {
+            item.isLocked = true;
+            item.quantity = lockedMap.get(item.productId)!;
+            item.difference = item.countedQuantity - item.quantity;
+          }
+        }
+      }
+
+      // Recuperar el estado actual del inventario y los conteos realizados desde Supabase (SELECT a audit_items)
       if (activePin) {
         try {
           const remoteCounts = await fetchSessionCountsFromSupabase(activePin);
           const effectiveCounts = remoteCounts.length > 0 ? remoteCounts : (cachedCounts || []);
           if (effectiveCounts && effectiveCounts.length > 0) {
-            const countsMap = new Map(effectiveCounts.map((c) => [c.quantId, c]));
+            const productCountsMap = new Map<number, RealtimeCountUpdate>();
+            const quantCountsMap = new Map<number, RealtimeCountUpdate>();
+            for (const c of effectiveCounts) {
+              if (c.productId) productCountsMap.set(c.productId, c);
+              if (c.quantId) quantCountsMap.set(c.quantId, c);
+            }
+
             for (const item of quantsData) {
-              const remote = countsMap.get(item.id);
+              const remote = (item.productId && productCountsMap.get(item.productId)) || quantCountsMap.get(item.id);
               if (remote) {
                 item.countedQuantity = remote.countedQuantity;
+                if (remote.isLocked) {
+                  item.isLocked = true;
+                  // Si el producto está inmovilizado, mantener la cantidad del sistema protegida
+                  if (remote.systemQuantity !== undefined && remote.systemQuantity !== null) {
+                    item.quantity = remote.systemQuantity;
+                  }
+                }
                 item.difference = remote.countedQuantity - item.quantity;
                 item.lastAuditedBy = remote.auditorName;
                 item.lastAuditedAt = remote.timestamp;
@@ -324,16 +366,23 @@ export default function App() {
         // Actualizar el conteo de la tarjeta de forma reactiva
         setItems((prevItems) => {
           return prevItems.map((item) => {
-            if (item.id === update.quantId) {
-              const diff = update.countedQuantity - item.quantity;
+            const matches = item.id === update.quantId || (update.productId && item.productId === update.productId);
+            if (matches) {
+              const newLocked = update.isLocked !== undefined ? update.isLocked : (item.isLocked ?? false);
+              const effectiveQty = (newLocked && update.systemQuantity !== undefined && update.systemQuantity !== null)
+                ? update.systemQuantity
+                : item.quantity;
+              const diff = update.countedQuantity - effectiveQty;
               return {
                 ...item,
+                quantity: effectiveQty,
                 countedQuantity: update.countedQuantity,
                 difference: diff,
+                isLocked: newLocked,
                 lastAuditedBy: update.auditorName,
                 lastAuditedAt: update.timestamp,
-                photoUrl: update.photoUrl || item.photoUrl,
-                notes: update.notes || item.notes,
+                photoUrl: update.photoUrl !== undefined ? update.photoUrl : item.photoUrl,
+                notes: update.notes !== undefined ? update.notes : item.notes,
               };
             }
             return item;
@@ -343,7 +392,7 @@ export default function App() {
         // Notificación visual de actualización por compañero de equipo
         if (update.auditorName !== session.auditorName) {
           sound.playScan();
-          setLastAuditNotification(`${update.auditorName} actualizó Quant #${update.quantId} a ${update.countedQuantity} uds.`);
+          setLastAuditNotification(`${update.auditorName} actualizó ${update.productName ? `"${update.productName}"` : `Quant #${update.quantId}`} a ${update.countedQuantity} uds.${update.isLocked ? ' 🔒' : ''}`);
           setTimeout(() => setLastAuditNotification(null), 3500);
         }
       },
@@ -365,6 +414,7 @@ export default function App() {
     if (!session) return;
 
     const now = new Date().toISOString();
+    const targetItem = items.find((it) => it.id === quantId);
 
     // Actualizar estado local inmediatamente para latencia cero en UI
     setItems((prev) =>
@@ -384,14 +434,69 @@ export default function App() {
       })
     );
 
-    // Emitir por Supabase Realtime a todos los auditores con el mismo PIN
+    // Emitir por Supabase Realtime a todos los auditores con el mismo PIN y persistir en audit_items con (pin, product_id)
     const updatePayload: RealtimeCountUpdate = {
       quantId,
+      productId: targetItem?.productId,
+      productName: targetItem?.productName,
+      barcode: targetItem?.barcode,
       countedQuantity: newCount,
+      systemQuantity: targetItem?.quantity,
+      isLocked: targetItem?.isLocked ?? false,
       auditorName: session.auditorName,
       timestamp: now,
       pin: session.pin,
       photoUrl,
+    };
+
+    await broadcastCountUpdate(updatePayload);
+  };
+
+  // Alternar candado de inmovilización / bloqueo de producto
+  const handleToggleLock = async (quantId: number) => {
+    if (!session) return;
+    const targetItem = items.find((it) => it.id === quantId);
+    if (!targetItem) return;
+
+    const nextLocked = !targetItem.isLocked;
+    const now = new Date().toISOString();
+
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id === quantId) {
+          return {
+            ...item,
+            isLocked: nextLocked,
+            lastAuditedAt: now,
+          };
+        }
+        return item;
+      })
+    );
+
+    if (nextLocked) {
+      sound.playSuccess();
+      setLastAuditNotification(`🔒 "${targetItem.productName}" inmovilizado (QS = ${targetItem.quantity} congelado).`);
+    } else {
+      sound.playCountDown();
+      setLastAuditNotification(`🔓 "${targetItem.productName}" desbloqueado.`);
+    }
+    setTimeout(() => setLastAuditNotification(null), 3000);
+
+    // Guardar y sincronizar en tiempo real el estado 'is_locked' en Supabase dentro de la tabla 'audit_items'
+    const updatePayload: RealtimeCountUpdate = {
+      quantId: targetItem.id,
+      productId: targetItem.productId,
+      productName: targetItem.productName,
+      barcode: targetItem.barcode,
+      countedQuantity: targetItem.countedQuantity,
+      systemQuantity: targetItem.quantity,
+      isLocked: nextLocked,
+      auditorName: session.auditorName,
+      timestamp: now,
+      pin: session.pin,
+      photoUrl: targetItem.photoUrl,
+      notes: targetItem.notes,
     };
 
     await broadcastCountUpdate(updatePayload);
@@ -858,6 +963,7 @@ export default function App() {
               key={item.id}
               item={item}
               onUpdateCount={handleUpdateCount}
+              onToggleLock={handleToggleLock}
               isFocused={focusedQuantId === item.id}
             />
           ))}

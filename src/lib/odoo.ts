@@ -687,12 +687,14 @@ export async function fetchQuants(
     const invQty = Number(q.inventory_quantity) || 0;
 
     // Si ya existe este producto en el mapa, agruparlo / sumar el stock en WH
+    // Si ya existe este producto en el mapa, agruparlo / sumar el stock en WH
     if (itemsByProduct.has(pId)) {
       const existing = itemsByProduct.get(pId)!;
       existing.quantity += systemQty;
       existing.inventoryQuantity = (existing.inventoryQuantity || 0) + invQty;
-      existing.countedQuantity = existing.inventoryQuantity !== 0 ? existing.inventoryQuantity : existing.quantity;
-      existing.difference = existing.countedQuantity - existing.quantity;
+      // BLIND COUNT: Por defecto en 0 para obligar a realizar el conteo físico desde cero
+      existing.countedQuantity = 0;
+      existing.difference = -existing.quantity;
       continue;
     }
 
@@ -720,7 +722,8 @@ export async function fetchQuants(
       itemCategName = catalogProd.categ_id[1];
     }
 
-    const initialCounted = invQty !== 0 ? invQty : systemQty;
+    // BLIND COUNT: Por defecto en 0 para obligar a realizar el conteo físico desde cero
+    const initialCounted = 0;
 
     const item: QuantItem = {
       id: q.id,
@@ -737,6 +740,7 @@ export async function fetchQuants(
       inventoryQuantity: invQty,
       countedQuantity: initialCounted,
       difference: initialCounted - systemQty,
+      isLocked: false,
       syncedToOdoo: false,
     };
 
@@ -1016,9 +1020,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Frutas y Verduras',
       companyId: 1,
       quantity: 135.93,
-      inventoryQuantity: 135.93,
-      countedQuantity: 135.93,
-      difference: 0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -135.93,
+      isLocked: false,
     },
     {
       id: 501,
@@ -1032,9 +1037,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Lubricantes y Fluidos',
       companyId: 1,
       quantity: 48,
-      inventoryQuantity: 48,
-      countedQuantity: 48,
-      difference: 0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -48,
+      isLocked: false,
     },
     {
       id: 502,
@@ -1048,11 +1054,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Filtros y Mantenimiento',
       companyId: 1,
       quantity: 24,
-      inventoryQuantity: 20,
-      countedQuantity: 20,
-      difference: -4, // Faltante
-      lastAuditedBy: 'Auditor Carlos',
-      lastAuditedAt: new Date(Date.now() - 15 * 60000).toISOString(),
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -24,
+      isLocked: false,
     },
     {
       id: 503,
@@ -1066,11 +1071,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Frenos y Suspensión',
       companyId: 1,
       quantity: 15,
-      inventoryQuantity: 18,
-      countedQuantity: 18,
-      difference: 3, // Sobrante
-      lastAuditedBy: 'Auditor María',
-      lastAuditedAt: new Date(Date.now() - 5 * 60000).toISOString(),
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -15,
+      isLocked: false,
     },
     {
       id: 504,
@@ -1084,9 +1088,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Baterías y Eléctrico',
       companyId: 1,
       quantity: 10,
-      inventoryQuantity: 10,
-      countedQuantity: 10,
-      difference: 0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -10,
+      isLocked: false,
     },
     {
       id: 505,
@@ -1100,9 +1105,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Lubricantes y Fluidos',
       companyId: 1,
       quantity: 32,
-      inventoryQuantity: 28,
-      countedQuantity: 28,
-      difference: -4,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -32,
+      isLocked: false,
     },
     {
       id: 506,
@@ -1116,9 +1122,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Herramientas y Equipos',
       companyId: 1,
       quantity: 6,
-      inventoryQuantity: 6,
-      countedQuantity: 6,
-      difference: 0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -6,
+      isLocked: false,
     },
     {
       id: 507,
@@ -1132,9 +1139,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Lubricantes y Fluidos',
       companyId: 1,
       quantity: 60,
-      inventoryQuantity: 60,
-      countedQuantity: 60,
-      difference: 0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -60,
+      isLocked: false,
     },
     {
       id: 508,
@@ -1148,9 +1156,10 @@ export function getDemoFVGrupoData(): {
       categName: 'Frenos y Suspensión',
       companyId: 1,
       quantity: 8,
-      inventoryQuantity: 8,
-      countedQuantity: 7,
-      difference: -1,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -8,
+      isLocked: false,
     }
   ];
 

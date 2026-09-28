@@ -236,7 +236,12 @@ export function subscribeToAuditSession(
       if (row && (row.quant_id || row.product_id)) {
         onCountUpdate({
           quantId: Number(row.quant_id || row.product_id),
+          productId: Number(row.product_id || row.quant_id),
+          productName: row.product_name || undefined,
+          barcode: row.barcode || undefined,
           countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+          systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
+          isLocked: Boolean(row.is_locked),
           auditorName: row.auditor_name || 'Auditor',
           timestamp: row.updated_at || row.created_at || new Date().toISOString(),
           pin: row.pin,
@@ -261,7 +266,12 @@ export function subscribeToAuditSession(
       if (row && (row.quant_id || row.product_id)) {
         onCountUpdate({
           quantId: Number(row.quant_id || row.product_id),
+          productId: Number(row.product_id || row.quant_id),
+          productName: row.product_name || undefined,
+          barcode: row.barcode || undefined,
           countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+          systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
+          isLocked: Boolean(row.is_locked),
           auditorName: row.auditor_name || 'Auditor',
           timestamp: row.updated_at || row.created_at || new Date().toISOString(),
           pin: row.pin,
@@ -364,43 +374,89 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
     }
   }
 
-  // 3. Persistir en la tabla 'audit_items' (o 'audit_counts') si el cliente Supabase está conectado
+  // 3. Persistir y realizar UPSERT directo en la tabla 'audit_items' usando ('pin', 'product_id')
   const client = getSupabaseClient();
   if (client) {
-    const candidateTables = ['audit_items', 'audit_counts'];
-    for (const table of candidateTables) {
-      try {
-        const itemRecord: Record<string, any> = {
-          id: `${update.pin}_${update.quantId}`,
+    const pId = Number(update.productId || update.quantId);
+    const qId = Number(update.quantId || update.productId);
+
+    try {
+      // 3.1 Intentar UPSERT en 'audit_items' con esquema enriquecido
+      const enrichedRecord: Record<string, any> = {
+        id: `${update.pin}_${pId}`,
+        pin: update.pin,
+        product_id: pId,
+        quant_id: qId,
+        counted_quantity: update.countedQuantity,
+        qty: update.countedQuantity,
+        is_locked: update.isLocked ?? false,
+        auditor_name: update.auditorName,
+        photo_url: update.photoUrl || null,
+        notes: update.notes || null,
+        updated_at: update.timestamp,
+      };
+      if (update.productName) enrichedRecord.product_name = update.productName;
+      if (update.barcode) enrichedRecord.barcode = update.barcode;
+      if (update.systemQuantity !== undefined) enrichedRecord.system_quantity = update.systemQuantity;
+
+      let { error: itemError } = await client
+        .from('audit_items')
+        .upsert(enrichedRecord, { onConflict: 'pin,product_id' });
+
+      // Si falla porque alguna columna aún no existe en Supabase (ej: auditor_name, quant_id)
+      if (itemError && (itemError.code === 'PGRST204' || itemError.message?.includes('column'))) {
+        const basicRecord = {
+          id: `${update.pin}_${pId}`,
           pin: update.pin,
-          quant_id: update.quantId,
-          counted_quantity: update.countedQuantity,
+          product_id: pId,
           qty: update.countedQuantity,
-          auditor_name: update.auditorName,
-          photo_url: update.photoUrl || null,
-          notes: update.notes || null,
+          is_locked: update.isLocked ?? false,
           updated_at: update.timestamp,
         };
-
-        const { error } = await client
-          .from(table)
-          .upsert(itemRecord, { onConflict: 'pin,quant_id' });
-
-        if (!error) {
-          break;
-        } else {
-          // Si el constraint de conflicto es sobre 'id', reintentar
-          if (error.message?.includes('conflict') || error.message?.includes('constraint')) {
-            const { error: idErr } = await client
-              .from(table)
-              .upsert(itemRecord, { onConflict: 'id' });
-            if (!idErr) break;
-          }
-          console.warn(`Nota upsert en ${table}:`, error.message);
-        }
-      } catch (dbErr) {
-        console.warn(`Nota: guardado en tabla ${table} omitido:`, dbErr);
+        const resBasic = await client
+          .from('audit_items')
+          .upsert(basicRecord, { onConflict: 'id' });
+        itemError = resBasic.error;
       }
+
+      // Si la tabla no tiene constraint compuesto (pin, product_id) sino solo 'id' como clave primaria
+      if (itemError && (itemError.code === '42P10' || itemError.message?.includes('conflict') || itemError.message?.includes('constraint'))) {
+        const idRecord = {
+          id: `${update.pin}_${pId}`,
+          pin: update.pin,
+          product_id: pId,
+          qty: update.countedQuantity,
+          is_locked: update.isLocked ?? false,
+          updated_at: update.timestamp,
+        };
+        const resId = await client
+          .from('audit_items')
+          .upsert(idRecord, { onConflict: 'id' });
+        itemError = resId.error;
+      }
+
+      if (itemError) {
+        console.warn('Nota upsert en audit_items:', itemError.message);
+      }
+    } catch (err) {
+      console.warn('Excepción en upsert audit_items:', err);
+    }
+
+    // 3.2 Como respaldo secundario y compatibilidad, actualizar también audit_counts
+    try {
+      await client.from('audit_counts').upsert({
+        id: `${update.pin}_${qId}`,
+        pin: update.pin,
+        quant_id: qId,
+        product_id: pId,
+        product_name: update.productName || null,
+        barcode: update.barcode || null,
+        qty: update.countedQuantity,
+        auditor_name: update.auditorName,
+        updated_at: update.timestamp,
+      }, { onConflict: 'pin,quant_id' });
+    } catch {
+      // noop
     }
   }
 }
@@ -508,7 +564,12 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
 
     const counts: RealtimeCountUpdate[] = countsRows.map((row) => ({
       quantId: Number(row.quant_id || row.product_id || 0),
+      productId: Number(row.product_id || row.quant_id || 0),
+      productName: row.product_name || undefined,
+      barcode: row.barcode || undefined,
       countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+      systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
+      isLocked: Boolean(row.is_locked),
       auditorName: row.auditor_name || 'Auditor',
       timestamp: row.updated_at || row.created_at || new Date().toISOString(),
       pin: row.pin,
@@ -554,7 +615,8 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
 }
 
 /**
- * 2. Recupera los conteos realizados por otros auditores para una sesión mediante SELECT en Supabase
+ * 2. Recupera los conteos y estados (incluyendo is_locked) de los productos mediante SELECT en Supabase
+ * Ejecuta primero la consulta en 'audit_items' filtrando por PIN
  */
 export async function fetchSessionCountsFromSupabase(pin: string): Promise<RealtimeCountUpdate[]> {
   if (!pin) return [];
@@ -570,34 +632,69 @@ export async function fetchSessionCountsFromSupabase(pin: string): Promise<Realt
   }
 
   try {
-    const { data, error } = await client
+    // 1. SELECT prioritario en la tabla 'audit_items' filtrando por 'pin'
+    const { data: itemsData, error: itemsError } = await client
+      .from('audit_items')
+      .select('*')
+      .eq('pin', pin)
+      .order('updated_at', { ascending: false });
+
+    if (!itemsError && itemsData && itemsData.length > 0) {
+      const mapped: RealtimeCountUpdate[] = itemsData.map((row: any) => ({
+        quantId: Number(row.quant_id || row.product_id || 0),
+        productId: Number(row.product_id || row.quant_id || 0),
+        productName: row.product_name || undefined,
+        barcode: row.barcode || undefined,
+        countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+        systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
+        isLocked: Boolean(row.is_locked),
+        auditorName: row.auditor_name || 'Auditor',
+        timestamp: row.updated_at || row.created_at || new Date().toISOString(),
+        pin: row.pin,
+        photoUrl: row.photo_url || undefined,
+        notes: row.notes || undefined,
+      }));
+
+      try {
+        localStorage.setItem(`${STORAGE_KEY_COUNTS}${pin}`, JSON.stringify(mapped));
+      } catch {}
+
+      return mapped;
+    }
+
+    // 2. Consulta de respaldo en 'audit_counts' por retrocompatibilidad
+    const { data: countsData, error: countsError } = await client
       .from('audit_counts')
       .select('*')
       .eq('pin', pin)
       .order('updated_at', { ascending: false });
 
-    if (error || !data) {
-      const local = localStorage.getItem(`${STORAGE_KEY_COUNTS}${pin}`);
-      return local ? JSON.parse(local) : [];
+    if (!countsError && countsData && countsData.length > 0) {
+      const mapped: RealtimeCountUpdate[] = countsData.map((row: any) => ({
+        quantId: Number(row.quant_id || row.product_id || 0),
+        productId: Number(row.product_id || row.quant_id || 0),
+        productName: row.product_name || undefined,
+        barcode: row.barcode || undefined,
+        countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+        systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
+        isLocked: Boolean(row.is_locked),
+        auditorName: row.auditor_name || 'Auditor',
+        timestamp: row.updated_at || row.created_at || new Date().toISOString(),
+        pin: row.pin,
+        photoUrl: row.photo_url || undefined,
+        notes: row.notes || undefined,
+      }));
+
+      try {
+        localStorage.setItem(`${STORAGE_KEY_COUNTS}${pin}`, JSON.stringify(mapped));
+      } catch {}
+
+      return mapped;
     }
 
-    const mapped: RealtimeCountUpdate[] = data.map((row: any) => ({
-      quantId: Number(row.quant_id),
-      countedQuantity: Number(row.counted_quantity),
-      auditorName: row.auditor_name || 'Auditor',
-      timestamp: row.updated_at || row.created_at || new Date().toISOString(),
-      pin: row.pin,
-      photoUrl: row.photo_url || undefined,
-      notes: row.notes || undefined,
-    }));
-
-    try {
-      localStorage.setItem(`${STORAGE_KEY_COUNTS}${pin}`, JSON.stringify(mapped));
-    } catch {
-      // noop
-    }
-
-    return mapped;
+    // 3. Fallback a caché local
+    const local = localStorage.getItem(`${STORAGE_KEY_COUNTS}${pin}`);
+    return local ? JSON.parse(local) : [];
   } catch (err) {
     console.warn('Error al recuperar conteos de Supabase:', err);
     try {
@@ -785,19 +882,47 @@ CREATE TABLE IF NOT EXISTS public.audit_sessions (
 CREATE TABLE IF NOT EXISTS public.audit_items (
     id TEXT PRIMARY KEY,
     pin VARCHAR(10) NOT NULL,
-    quant_id BIGINT NOT NULL,
-    product_id BIGINT,
+    product_id BIGINT NOT NULL,
+    quant_id BIGINT,
     product_name TEXT,
     barcode TEXT,
+    system_quantity NUMERIC(12, 2) DEFAULT 0,
     counted_quantity NUMERIC(12, 2) NOT NULL DEFAULT 0,
     qty NUMERIC(12, 2) NOT NULL DEFAULT 0,
-    auditor_name VARCHAR(100) NOT NULL,
+    is_locked BOOLEAN DEFAULT FALSE,
+    auditor_name VARCHAR(100),
     photo_url TEXT,
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT audit_items_pin_quant_unique UNIQUE (pin, quant_id)
+    CONSTRAINT audit_items_pin_product_unique UNIQUE (pin, product_id)
 );
+
+-- Asegurar columnas si la tabla audit_items ya existía
+ALTER TABLE IF EXISTS public.audit_items 
+    ADD COLUMN IF NOT EXISTS product_id BIGINT,
+    ADD COLUMN IF NOT EXISTS quant_id BIGINT,
+    ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS system_quantity NUMERIC(12, 2) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS counted_quantity NUMERIC(12, 2) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS qty NUMERIC(12, 2) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS product_name TEXT,
+    ADD COLUMN IF NOT EXISTS barcode TEXT,
+    ADD COLUMN IF NOT EXISTS auditor_name VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS photo_url TEXT,
+    ADD COLUMN IF NOT EXISTS notes TEXT,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'audit_items_pin_product_unique'
+  ) THEN
+    ALTER TABLE public.audit_items ADD CONSTRAINT audit_items_pin_product_unique UNIQUE (pin, product_id);
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
 
 -- 3. TABLA: audit_counts (Compatibilidad previa)
 CREATE TABLE IF NOT EXISTS public.audit_counts (
@@ -809,7 +934,8 @@ CREATE TABLE IF NOT EXISTS public.audit_counts (
     barcode TEXT,
     counted_quantity NUMERIC(12, 2) NOT NULL DEFAULT 0,
     qty NUMERIC(12, 2) NOT NULL DEFAULT 0,
-    auditor_name VARCHAR(100) NOT NULL,
+    is_locked BOOLEAN DEFAULT FALSE,
+    auditor_name VARCHAR(100),
     photo_url TEXT,
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -822,7 +948,7 @@ ALTER TABLE public.audit_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.audit_counts ENABLE ROW LEVEL SECURITY;
 
--- 5. POLÍTICAS RLS PÚBLICAS PARA CLAVE ANON / PUBLISHABLE
+-- 5. POLÍTICAS RLS PÚBLICAS PARA CLAVE ANON / PUBLISHABLE (Lectura, Inserción y Upsert)
 DROP POLICY IF EXISTS "Public select sessions" ON public.audit_sessions;
 CREATE POLICY "Public select sessions" ON public.audit_sessions
     FOR SELECT TO public USING (true);
