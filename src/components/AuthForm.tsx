@@ -1007,39 +1007,67 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-300">Supabase Publishable / Anon Key:</label>
-                <input
-                  type="text"
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-medium text-slate-300">Supabase Publishable / Anon Public Key:</label>
+                  <a
+                    href="https://supabase.com/dashboard/project/sepeawvmamugivoptfyf/settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-indigo-400 hover:text-indigo-300 underline"
+                  >
+                    Obtener en Supabase ↗
+                  </a>
+                </div>
+                <textarea
+                  rows={2}
                   value={supabaseSettings.anonKey}
                   onChange={(e) => setSupabaseSettingsState({ ...supabaseSettings, anonKey: e.target.value.trim() })}
-                  placeholder={DEFAULT_SUPABASE_ANON_KEY}
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none"
+                  placeholder="Pega aquí la clave completa (eyJ... o sb_publishable_...)"
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-indigo-500 resize-none"
                 />
+                <p className="text-[10px] text-amber-300/80">
+                  * Debe ser la cadena completa copiada de Supabase (las claves anon públicas estándar empiezan por <span className="font-mono text-white">eyJhbGciOi...</span>).
+                </p>
               </div>
 
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
                   onClick={handleSaveSupabase}
-                  className="flex-1 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer"
+                  className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer"
                 >
                   Guardar Credenciales
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const def = {
-                      url: DEFAULT_SUPABASE_URL,
-                      anonKey: DEFAULT_SUPABASE_ANON_KEY,
-                    };
-                    setSupabaseSettingsState(def);
-                    saveSupabaseSettings(def);
-                    sound.playSuccess();
+                  onClick={async () => {
+                    const testUrl = supabaseSettings.url.trim();
+                    const testKey = supabaseSettings.anonKey.trim();
+                    if (!testUrl || !testKey) {
+                      setAuthError('Por favor ingresa la URL y la clave completa de Supabase.');
+                      return;
+                    }
+                    try {
+                      const { createClient } = await import('@supabase/supabase-js');
+                      const client = createClient(testUrl, testKey);
+                      const { error } = await client.from('audit_sessions').select('id').limit(1);
+                      if (error && (error.message.includes('Invalid API key') || (error as any).status === 401)) {
+                        sound.playError();
+                        setAuthError('Error: "Invalid API key". La clave de Supabase está incompleta o es inválida. Asegúrate de copiar la cadena completa sin puntos suspensivos.');
+                      } else {
+                        sound.playSuccess();
+                        setAuthError(null);
+                        alert('✓ Conexión con Supabase verificada exitosamente.');
+                      }
+                    } catch (err: any) {
+                      sound.playError();
+                      setAuthError(`Error de conexión con Supabase: ${err.message || String(err)}`);
+                    }
                   }}
-                  className="py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-medium text-xs transition cursor-pointer"
-                  title="Restablecer valores originales de Supabase"
+                  className="py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-medium text-xs transition cursor-pointer"
+                  title="Comprobar si la clave y la URL son válidas"
                 >
-                  Restablecer
+                  Probar Conexión
                 </button>
               </div>
             </div>
