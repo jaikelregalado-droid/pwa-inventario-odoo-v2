@@ -11,6 +11,9 @@ interface SessionBarProps {
   onLeaveSession?: () => void;
   onOpenSyncModal: () => void;
   onOpenOdooModal: () => void;
+  isOnline?: boolean;
+  pendingSyncCount?: number;
+  onTriggerPendingSync?: () => void;
 }
 
 export const SessionBar: React.FC<SessionBarProps> = ({
@@ -21,6 +24,9 @@ export const SessionBar: React.FC<SessionBarProps> = ({
   onLeaveSession,
   onOpenSyncModal,
   onOpenOdooModal,
+  isOnline = true,
+  pendingSyncCount = 0,
+  onTriggerPendingSync,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showAuditorsList, setShowAuditorsList] = useState(false);
@@ -94,6 +100,27 @@ export const SessionBar: React.FC<SessionBarProps> = ({
 
         {/* Lado derecho: Estado de Conexión, Auditores en Vivo, Mute y Acciones */}
         <div className="flex items-center gap-1.5">
+          {/* Etiqueta visual de Modo Offline o botón de pendientes */}
+          {!isOnline ? (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-300 text-[11px] font-bold shadow-sm animate-pulse"
+              title="Sin conexión a internet. Los cambios se guardan localmente."
+            >
+              <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+              <span>Modo Offline{pendingSyncCount > 0 ? ` (${pendingSyncCount})` : ''}</span>
+            </div>
+          ) : pendingSyncCount > 0 ? (
+            <button
+              type="button"
+              onClick={onTriggerPendingSync}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900/80 border border-indigo-500/50 text-indigo-300 text-[11px] font-bold shadow-sm cursor-pointer transition active:scale-95"
+              title="Hay conteos pendientes de enviar a Supabase. Toca para sincronizar."
+            >
+              <Radio className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+              <span>Sincronizar ({pendingSyncCount})</span>
+            </button>
+          ) : null}
+
           {/* Indicador de Estado WebSocket / Supabase */}
           <button
             onClick={onOpenSyncModal}

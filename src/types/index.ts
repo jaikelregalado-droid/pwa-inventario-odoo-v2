@@ -54,6 +54,7 @@ export interface QuantItem {
   photoUrl?: string;              // Imagen de evidencia capturada desde la cámara móvil
   syncedToOdoo?: boolean;         // Si ya fue enviado a Odoo (inventory_quantity)
   notes?: string;                 // Notas de auditoría opcionales
+  countHistory?: number[];        // Historial de aportes parciales de conteo (ej. [4, 5])
 }
 
 export interface AuditSession {
@@ -83,6 +84,7 @@ export interface RealtimeCountUpdate {
   pin: string;
   photoUrl?: string;
   notes?: string;
+  countHistory?: number[];
 }
 
 export interface SupabaseConfig {

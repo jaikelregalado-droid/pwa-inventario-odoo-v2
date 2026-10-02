@@ -1165,3 +1165,165 @@ export function getDemoFVGrupoData(): {
 
   return { locations, categories, quants };
 }
+
+export interface GlobalProductLookupResult {
+  found: boolean;
+  product?: {
+    id: number;
+    name: string;
+    defaultCode: string;
+    barcode: string;
+    categId?: number;
+    categName?: string;
+  };
+  locations?: Array<{
+    quantId: number;
+    locationId: number;
+    locationName: string;
+    quantity: number;
+  }>;
+}
+
+/**
+ * Consulta global en Odoo (product.product y stock.quant)
+ * para detectar productos escaneados que no pertenecen a la ubicación actual
+ */
+export async function lookupGlobalProductInOdoo(
+  config: OdooConnectionConfig,
+  code: string,
+  isDemo: boolean = false
+): Promise<GlobalProductLookupResult> {
+  const clean = (code || '').trim();
+  if (!clean) return { found: false };
+
+  // 1. Si está en modo demo o sin credenciales, buscar en catálogo demo
+  if (isDemo || !config.url || !config.apiKey) {
+    const demo = getDemoFVGrupoData();
+    const foundDemo = demo.quants.find(
+      q => (q.barcode && q.barcode.toLowerCase() === clean.toLowerCase()) ||
+           (q.defaultCode && q.defaultCode.toLowerCase() === clean.toLowerCase())
+    );
+    if (foundDemo) {
+      return {
+        found: true,
+        product: {
+          id: foundDemo.productId,
+          name: foundDemo.productName,
+          defaultCode: foundDemo.defaultCode,
+          barcode: foundDemo.barcode,
+          categId: foundDemo.categId,
+          categName: foundDemo.categName,
+        },
+        locations: [
+          {
+            quantId: foundDemo.id,
+            locationId: foundDemo.locationId,
+            locationName: foundDemo.locationName,
+            quantity: foundDemo.quantity,
+          }
+        ]
+      };
+    }
+    return { found: false };
+  }
+
+  // 2. Conexión real con Odoo JSON-RPC
+  try {
+    const uid = await ensureAuthenticatedUid(config);
+    if (!uid) return { found: false };
+
+    // Buscar en product.product por código de barras o referencia interna
+    const domain = [
+      '|',
+      ['barcode', '=', clean],
+      ['default_code', '=', clean],
+    ];
+
+    const products = await executeJsonRpc<Array<{
+      id: number;
+      name: string;
+      display_name?: string;
+      default_code?: string;
+      barcode?: string;
+      categ_id?: [number, string] | number;
+    }>>(
+      config,
+      'object',
+      'execute_kw',
+      [
+        config.db,
+        uid,
+        config.apiKey,
+        'product.product',
+        'search_read',
+        [domain],
+        {
+          fields: ['id', 'name', 'display_name', 'default_code', 'barcode', 'categ_id'],
+          limit: 1,
+        }
+      ]
+    );
+
+    if (!products || products.length === 0) {
+      return { found: false };
+    }
+
+    const prod = products[0];
+    const categName = Array.isArray(prod.categ_id) ? prod.categ_id[1] : undefined;
+    const categId = Array.isArray(prod.categ_id) ? prod.categ_id[0] : (typeof prod.categ_id === 'number' ? prod.categ_id : undefined);
+
+    // Buscar existencias actuales en stock.quant para ver en qué ubicaciones/departamentos está
+    let locations: Array<{ quantId: number; locationId: number; locationName: string; quantity: number }> = [];
+    try {
+      const quants = await executeJsonRpc<Array<{
+        id: number;
+        location_id: [number, string] | number;
+        quantity: number;
+      }>>(
+        config,
+        'object',
+        'execute_kw',
+        [
+          config.db,
+          uid,
+          config.apiKey,
+          'stock.quant',
+          'search_read',
+          [[['product_id', '=', prod.id], ['location_id.usage', '=', 'internal']]],
+          {
+            fields: ['id', 'location_id', 'quantity'],
+            limit: 10,
+          }
+        ]
+      );
+
+      if (quants && quants.length > 0) {
+        locations = quants.map(q => ({
+          quantId: q.id,
+          locationId: Array.isArray(q.location_id) ? q.location_id[0] : q.location_id,
+          locationName: Array.isArray(q.location_id) ? q.location_id[1] : `Ubicación #${q.location_id}`,
+          quantity: q.quantity || 0,
+        }));
+      }
+    } catch (e) {
+      console.warn('Advertencia buscando ubicaciones en stock.quant:', e);
+    }
+
+    return {
+      found: true,
+      product: {
+        id: prod.id,
+        name: prod.display_name || prod.name,
+        defaultCode: cleanCode(prod.default_code),
+        barcode: prod.barcode || '',
+        categId,
+        categName,
+      },
+      locations,
+    };
+  } catch (err) {
+    console.error('Error in lookupGlobalProductInOdoo:', err);
+    return { found: false };
+  }
+}
+

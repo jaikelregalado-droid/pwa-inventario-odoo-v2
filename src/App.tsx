@@ -9,12 +9,16 @@ import {
   RefreshCw,
   Plus,
   CheckCircle,
+  CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   ArrowUpDown,
+  ArrowUp,
   Boxes,
   Layers,
   Sparkles,
   Wifi,
+  WifiOff,
   FileSpreadsheet,
   SlidersHorizontal,
   ChevronDown,
@@ -29,7 +33,14 @@ import {
   OdooCategory,
   OdooLocation
 } from './types';
-import { fetchQuants, fetchCategories, fetchLocations, getDemoFVGrupoData, ensureAuthenticatedUid } from './lib/odoo';
+import {
+  fetchQuants,
+  fetchCategories,
+  fetchLocations,
+  getDemoFVGrupoData,
+  ensureAuthenticatedUid,
+  lookupGlobalProductInOdoo
+} from './lib/odoo';
 import {
   subscribeToAuditSession,
   broadcastCountUpdate,
@@ -39,10 +50,18 @@ import {
 } from './lib/supabase';
 import { exportAuditToExcel } from './lib/exportExcel';
 import { sound } from './lib/audio';
+import {
+  saveOfflineCatalog,
+  loadOfflineCatalog,
+  queuePendingCount,
+  getPendingCounts,
+  syncPendingCounts,
+} from './lib/offlineSync';
 import { AuthForm } from './components/AuthForm';
 import { SessionBar } from './components/SessionBar';
 import { ProductCard } from './components/ProductCard';
 import { OdooSyncModal } from './components/OdooSyncModal';
+import { ProductOtherLocationModal } from './components/ProductOtherLocationModal';
 import { SyncModal } from './components/SyncModal';
 import { ScannerModal } from './components/ScannerModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
@@ -100,6 +119,29 @@ export default function App() {
   const [auditors, setAuditors] = useState<AuditorPresence[]>([]);
   const [lastAuditNotification, setLastAuditNotification] = useState<string | null>(null);
 
+  // Botón flotante Volver Arriba (Scroll to top > 300px)
+  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
+
+  // Modo Offline y cola de sincronización automática
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+
+  // Retroalimentación visual y alertas del escáner con código de colores (Verde Éxito / Rojo Error)
+  const [scannerAlert, setScannerAlert] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    id: number;
+  } | null>(null);
+
+  // Apertura directa del modal de lote tras escaneo (sin autoincremento +1)
+  const [autoOpenBatchQuantId, setAutoOpenBatchQuantId] = useState<number | null>(null);
+
+  // Modal para productos detectados en otras ubicaciones / departamentos
+  const [otherLocationModalData, setOtherLocationModalData] = useState<{
+    product: any;
+    locations: Array<{ quantId: number; locationId: number; locationName: string; quantity: number }>;
+  } | null>(null);
+
   // Búsqueda y Escáner Continuo USB / Bluetooth
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [continuousScanMode, setContinuousScanMode] = useState<boolean>(true);
@@ -131,6 +173,82 @@ export default function App() {
       localStorage.setItem(STORAGE_CONFIG_KEY, JSON.stringify(odooConfig));
     }
   }, [odooConfig]);
+
+  // 1. REQUISITO: Botón flotante 'Volver Arriba' (> 300px)
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 2. REQUISITO: Escuchar conectividad de red y re-sincronizar automáticamente hacia Supabase
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      triggerAutoResync();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Cargar conteos pendientes previos al inicializar la sesión
+    if (session?.pin) {
+      const pending = getPendingCounts(session.pin);
+      setPendingSyncCount(pending.length);
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [session?.pin]);
+
+  // 3. REQUISITO: Guardar catálogo cargado y estados de conteo en LocalStorage para contingencia offline
+  useEffect(() => {
+    if (session?.pin && items.length > 0) {
+      saveOfflineCatalog(session.pin, items);
+    }
+  }, [items, session?.pin]);
+
+  // Temporizador para auto-descartar alertas del escáner
+  useEffect(() => {
+    if (!scannerAlert) return;
+    const timeout = scannerAlert.type === 'error' || scannerAlert.type === 'warning' ? 5000 : 3500;
+    const timer = setTimeout(() => {
+      setScannerAlert(null);
+    }, timeout);
+    return () => clearTimeout(timer);
+  }, [scannerAlert?.id]);
+
+  // Ejecución de sincronización automática de conteos pendientes al recuperar conexión
+  const triggerAutoResync = async () => {
+    if (!session?.pin || !navigator.onLine) return;
+    const currentQueue = getPendingCounts(session.pin);
+    if (currentQueue.length === 0) {
+      setPendingSyncCount(0);
+      return;
+    }
+
+    const { synced, failed } = await syncPendingCounts(session.pin, (remaining) => {
+      setPendingSyncCount(remaining);
+    });
+
+    setPendingSyncCount(failed);
+
+    if (synced > 0) {
+      sound.playSuccess();
+      setScannerAlert({
+        message: `✓ Sincronizados ${synced} conteo(s) pendiente(s) con Supabase`,
+        type: 'success',
+        id: Date.now(),
+      });
+    }
+  };
 
   // Cargar catálogo de categorías desde Odoo o Demo
   const loadCategoriesOnly = async (cfg: OdooConnectionConfig, isDemo = false) => {
@@ -176,6 +294,21 @@ export default function App() {
 
     const activePin = session?.pin || localStorage.getItem('odoo_audit_active_pin');
 
+    // REQUISITO: Si estamos offline y hay datos guardados localmente, cargar catálogo de inmediato
+    if (!navigator.onLine && activePin) {
+      const cachedOffline = loadOfflineCatalog(activePin);
+      if (cachedOffline && cachedOffline.length > 0) {
+        setItems(cachedOffline);
+        setIsLoadingItems(false);
+        setScannerAlert({
+          message: 'Modo Offline: trabajando con catálogo guardado en este dispositivo',
+          type: 'info',
+          id: Date.now(),
+        });
+        return;
+      }
+    }
+
     if (isDemo) {
       const demo = getDemoFVGrupoData();
       let filteredQuants = targetCatId
@@ -208,6 +341,7 @@ export default function App() {
                   countedQuantity: remote.countedQuantity,
                   difference: remote.countedQuantity - effectiveSysQty,
                   isLocked,
+                  countHistory: remote.countHistory !== undefined ? remote.countHistory : item.countHistory,
                   lastAuditedBy: remote.auditorName,
                   lastAuditedAt: remote.timestamp,
                   photoUrl: remote.photoUrl || item.photoUrl,
@@ -278,6 +412,7 @@ export default function App() {
                   }
                 }
                 item.difference = remote.countedQuantity - item.quantity;
+                if (remote.countHistory) item.countHistory = remote.countHistory;
                 item.lastAuditedBy = remote.auditorName;
                 item.lastAuditedAt = remote.timestamp;
                 if (remote.photoUrl) item.photoUrl = remote.photoUrl;
@@ -299,6 +434,20 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Error transparente recibido de Odoo:', err);
+      // REQUISITO: Si falla la conexión a Odoo pero tenemos el catálogo guardado localmente, usarlo
+      if (activePin) {
+        const cachedOffline = loadOfflineCatalog(activePin);
+        if (cachedOffline && cachedOffline.length > 0) {
+          setItems(cachedOffline);
+          setLoadError(null);
+          setScannerAlert({
+            message: 'Modo Offline: operando con catálogo en almacenamiento local',
+            type: 'warning',
+            id: Date.now(),
+          });
+          return;
+        }
+      }
       setLoadError(err.message || String(err) || 'Error desconocido al comunicar con Odoo 17');
     } finally {
       setIsLoadingItems(false);
@@ -383,6 +532,7 @@ export default function App() {
                 lastAuditedAt: update.timestamp,
                 photoUrl: update.photoUrl !== undefined ? update.photoUrl : item.photoUrl,
                 notes: update.notes !== undefined ? update.notes : item.notes,
+                countHistory: update.countHistory !== undefined ? update.countHistory : item.countHistory,
               };
             }
             return item;
@@ -409,13 +559,19 @@ export default function App() {
     };
   }, [session?.pin]);
 
-  // Manejo de actualización de conteo local y emisión a Supabase
-  const handleUpdateCount = async (quantId: number, newCount: number, photoUrl?: string) => {
+  // Manejo de actualización de conteo local, persistencia offline y emisión a Supabase
+  const handleUpdateCount = async (
+    quantId: number,
+    newCount: number,
+    photoUrl?: string,
+    newHistory?: number[]
+  ) => {
     if (!session) return;
 
     const now = new Date().toISOString();
     const targetItem = items.find((it) => it.id === quantId);
     const cleanCount = Math.round(newCount * 1000) / 1000;
+    const effectiveHistory = newHistory !== undefined ? newHistory : targetItem?.countHistory;
 
     // Actualizar estado local inmediatamente para latencia cero en UI
     setItems((prev) =>
@@ -425,6 +581,7 @@ export default function App() {
             ...item,
             countedQuantity: cleanCount,
             difference: Math.round((cleanCount - item.quantity) * 1000) / 1000,
+            countHistory: effectiveHistory,
             lastAuditedBy: session.auditorName,
             lastAuditedAt: now,
             photoUrl: photoUrl !== undefined ? photoUrl : item.photoUrl,
@@ -448,9 +605,26 @@ export default function App() {
       timestamp: now,
       pin: session.pin,
       photoUrl,
+      countHistory: effectiveHistory,
     };
 
-    await broadcastCountUpdate(updatePayload);
+    // Si estamos offline, encolar en LocalStorage para sincronización automática
+    if (!navigator.onLine) {
+      const qLen = queuePendingCount(session.pin, updatePayload);
+      setPendingSyncCount(qLen);
+      return;
+    }
+
+    try {
+      const res = await broadcastCountUpdate(updatePayload);
+      if (!res.success) {
+        const qLen = queuePendingCount(session.pin, updatePayload);
+        setPendingSyncCount(qLen);
+      }
+    } catch {
+      const qLen = queuePendingCount(session.pin, updatePayload);
+      setPendingSyncCount(qLen);
+    }
   };
 
   // Alternar candado de inmovilización / bloqueo de producto
@@ -498,13 +672,29 @@ export default function App() {
       pin: session.pin,
       photoUrl: targetItem.photoUrl,
       notes: targetItem.notes,
+      countHistory: targetItem.countHistory,
     };
 
-    await broadcastCountUpdate(updatePayload);
+    if (!navigator.onLine) {
+      const qLen = queuePendingCount(session.pin, updatePayload);
+      setPendingSyncCount(qLen);
+      return;
+    }
+
+    try {
+      const res = await broadcastCountUpdate(updatePayload);
+      if (!res.success) {
+        const qLen = queuePendingCount(session.pin, updatePayload);
+        setPendingSyncCount(qLen);
+      }
+    } catch {
+      const qLen = queuePendingCount(session.pin, updatePayload);
+      setPendingSyncCount(qLen);
+    }
   };
 
   // Procesar código escaneado (desde escáner físico USB/Bluetooth o cámara)
-  const handleBarcodeScanned = (rawCode: string) => {
+  const handleBarcodeScanned = async (rawCode: string) => {
     const clean = (rawCode || '').trim();
     if (!clean) return;
 
@@ -543,27 +733,108 @@ export default function App() {
       );
     }
 
+    // 4. REQUISITO: ESCÁNER CON ENFOQUE DIRECTO (SIN AUTOINCREMENTO +1)
     if (found) {
-      sound.playCountUp();
+      sound.playScan();
       setFocusedQuantId(found.id);
-
-      // Sumar o abrir el conteo de inmediato (+1 a la cantidad contada actual)
-      const nextCount = Math.round(((found.countedQuantity || 0) + 1) * 1000) / 1000;
-      handleUpdateCount(found.id, nextCount);
-
+      setAutoOpenBatchQuantId(found.id);
       setSearchQuery('');
-      setLastAuditNotification(`✓ ${found.productName} [+1] → Conteo: ${nextCount} uds.`);
-      setTimeout(() => setLastAuditNotification(null), 3500);
-    } else {
-      sound.playError();
-      setLastAuditNotification(`⚠️ Código no encontrado: "${rawCode}"`);
-      setTimeout(() => setLastAuditNotification(null), 3500);
+
+      // 6. REQUISITO: RETROALIMENTACIÓN VISUAL VERDE PARA ÉXITO
+      setScannerAlert({
+        message: `✓ Encontrado: "${found.productName}" (Ingresa la cantidad contada)`,
+        type: 'success',
+        id: Date.now(),
+      });
+
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+      return;
     }
+
+    // 5. REQUISITO: DETECCIÓN DE PRODUCTOS EN OTROS DEPARTAMENTOS / UBICACIONES EN ODOO
+    setScannerAlert({
+      message: `Buscando código "${clean}" en catálogo general de Odoo...`,
+      type: 'info',
+      id: Date.now(),
+    });
+
+    try {
+      if (odooConfig) {
+        const lookup = await lookupGlobalProductInOdoo(odooConfig, clean, isDemoMode);
+        if (lookup.found && lookup.product) {
+          sound.playScan();
+          setScannerAlert({
+            message: `⚠️ Producto "${lookup.product.name}" detectado en otra ubicación en Odoo`,
+            type: 'warning',
+            id: Date.now(),
+          });
+          setOtherLocationModalData({
+            product: lookup.product,
+            locations: lookup.locations || [],
+          });
+          return;
+        }
+      }
+    } catch (lookupErr) {
+      console.warn('Error consultando catálogo global de Odoo:', lookupErr);
+    }
+
+    // 6. REQUISITO: MENSAJES DE ERROR / NO EXISTE -> Fondo/Texto ROJO destellante
+    sound.playError();
+    setScannerAlert({
+      message: `✕ Código no encontrado: "${clean}" (No existe en la lista ni en Odoo)`,
+      type: 'error',
+      id: Date.now(),
+    });
 
     // Devolver el foco al input para el siguiente disparo del lector láser
     if (searchInputRef.current) {
       searchInputRef.current.focus();
     }
+  };
+
+  // 5. REQUISITO: Vincular producto de otra ubicación a la auditoría actual
+  const handleLinkProductToCurrentAudit = (
+    product: any,
+    locations: Array<{ quantId: number; locationId: number; locationName: string; quantity: number }>
+  ) => {
+    if (!session) return;
+    const existingInLocation = locations.find((l) => l.locationId === session.locationId);
+    const newQuantId = existingInLocation?.quantId || Date.now();
+
+    const newItem: QuantItem = {
+      id: newQuantId,
+      productId: product.id,
+      productName: product.name,
+      defaultCode: product.defaultCode || '',
+      barcode: product.barcode || '',
+      locationId: session.locationId || 0,
+      locationName: session.locationName,
+      categId: session.categoryId || product.categId,
+      categName: session.categoryName || product.categName,
+      companyId: session.companyId,
+      quantity: existingInLocation?.quantity || 0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -(existingInLocation?.quantity || 0),
+      isLocked: false,
+      countHistory: [],
+      syncedToOdoo: false,
+    };
+
+    setItems((prev) => [newItem, ...prev]);
+    setOtherLocationModalData(null);
+    sound.playSuccess();
+    setFocusedQuantId(newItem.id);
+    setAutoOpenBatchQuantId(newItem.id);
+
+    setScannerAlert({
+      message: `✓ Vinculado "${newItem.productName}" al conteo actual`,
+      type: 'success',
+      id: Date.now(),
+    });
   };
 
   // Manejador del input de búsqueda / escáner físico: listener para Enter y NumpadEnter
@@ -735,10 +1006,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-24 selection:bg-indigo-500 selection:text-white">
-      {/* 1. BARRA SUPERIOR FIJA DE SESIÓN (PIN, Estado WebSocket, Auditores en Vivo) */}
+      {/* 1. BARRA SUPERIOR FIJA DE SESIÓN (PIN, Estado WebSocket, Auditores en Vivo, Modo Offline) */}
       <SessionBar
         session={session}
-        connectionStatus={connectionStatus}
+        connectionStatus={isOnline ? connectionStatus : 'local_only'}
+        isOnline={isOnline}
+        pendingSyncCount={pendingSyncCount}
+        onTriggerPendingSync={triggerAutoResync}
         auditors={auditors}
         onLogout={handleLogout}
         onLeaveSession={handleLogout}
@@ -746,8 +1020,39 @@ export default function App() {
         onOpenOdooModal={() => setShowOdooModal(true)}
       />
 
+      {/* 6. REQUISITO: Notificaciones Visuales y Colores de Alertas del Escáner (Verde Éxito / Rojo Error) */}
+      {scannerAlert && (
+        <div
+          className={`fixed top-14 sm:top-16 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] sm:w-auto px-4 py-3 rounded-2xl text-xs sm:text-sm font-bold shadow-2xl transition-all duration-300 flex items-center justify-between gap-3 ${
+            scannerAlert.type === 'success'
+              ? 'bg-emerald-950/95 border-2 border-emerald-500 text-emerald-100 shadow-emerald-950/80 animate-in fade-in slide-in-from-top-3'
+              : scannerAlert.type === 'error'
+              ? 'bg-rose-950/95 border-2 border-rose-500 text-rose-100 shadow-rose-950/80 animate-pulse'
+              : scannerAlert.type === 'warning'
+              ? 'bg-amber-950/95 border-2 border-amber-500 text-amber-100 shadow-amber-950/80 animate-in fade-in slide-in-from-top-3'
+              : 'bg-indigo-950/95 border-2 border-indigo-500 text-indigo-100 shadow-indigo-950/80 animate-in fade-in slide-in-from-top-3'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            {scannerAlert.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+            {scannerAlert.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />}
+            {scannerAlert.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />}
+            {scannerAlert.type === 'info' && <RefreshCw className="w-5 h-5 text-indigo-400 shrink-0 animate-spin" />}
+            <span className="leading-snug truncate">{scannerAlert.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setScannerAlert(null)}
+            className="p-1 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition shrink-0 cursor-pointer text-xs"
+            title="Cerrar notificación"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Banner de notificación en vivo cuando otro auditor hace un conteo */}
-      {lastAuditNotification && (
+      {lastAuditNotification && !scannerAlert && (
         <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-2xl shadow-indigo-950/80 animate-in fade-in slide-in-from-top-2 border border-indigo-400/40">
           {lastAuditNotification}
         </div>
@@ -784,7 +1089,13 @@ export default function App() {
 
         {/* Barra de Búsqueda y Escáner Láser con Autofocus Constante */}
         <div className="flex items-center gap-2">
-          <div className="relative flex-1">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleBarcodeScanned(searchQuery);
+            }}
+            className="relative flex-1"
+          >
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               ref={searchInputRef}
@@ -800,6 +1111,7 @@ export default function App() {
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => setSearchQuery('')}
                   className="p-1 rounded-md text-slate-400 hover:text-white"
                 >
@@ -807,10 +1119,10 @@ export default function App() {
                 </button>
               )}
               <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-indigo-300 border border-slate-700">
-                Enter = +1
+                Enter = Enfocar
               </span>
             </div>
-          </div>
+          </form>
 
           {/* Botón de Cámara para Escaneo en Vivo */}
           <button
@@ -966,10 +1278,25 @@ export default function App() {
               onUpdateCount={handleUpdateCount}
               onToggleLock={handleToggleLock}
               isFocused={focusedQuantId === item.id}
+              autoOpenBatch={autoOpenBatchQuantId === item.id}
+              onBatchModalOpened={() => setAutoOpenBatchQuantId(null)}
             />
           ))}
         </div>
       </main>
+
+      {/* 1. REQUISITO: Botón flotante circular 'Volver Arriba' (> 300px) */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-20 right-4 sm:bottom-22 sm:right-6 z-40 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 active:scale-90 text-white shadow-2xl shadow-indigo-950 flex items-center justify-center border-2 border-indigo-400/40 transition-all duration-300 animate-in fade-in zoom-in cursor-pointer select-none"
+          title="Volver al inicio de la lista"
+          aria-label="Volver arriba"
+        >
+          <ArrowUp className="w-5 h-5 stroke-[2.5]" />
+        </button>
+      )}
 
       {/* 5. BARRA INFERIOR FIJA FLOTANTE PARA ACCIONES PRINCIPALES (Enviar a Odoo + Exportar Excel) */}
       <footer className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-4 py-2.5 shadow-2xl">
@@ -1034,6 +1361,24 @@ export default function App() {
         onClose={() => setShowCameraScanner(false)}
         onBarcodeDetected={handleBarcodeScanned}
       />
+
+      {/* 5. REQUISITO: Modal para Productos Detectados en Otras Ubicaciones / Departamentos */}
+      {otherLocationModalData && (
+        <ProductOtherLocationModal
+          isOpen={Boolean(otherLocationModalData)}
+          onClose={() => setOtherLocationModalData(null)}
+          product={otherLocationModalData.product}
+          locations={otherLocationModalData.locations}
+          currentLocationName={session.locationName}
+          currentCategoryName={session.categoryName}
+          onLinkToCurrentAudit={() =>
+            handleLinkProductToCurrentAudit(
+              otherLocationModalData.product,
+              otherLocationModalData.locations
+            )
+          }
+        />
+      )}
 
       {/* Modal Obligatorio de Selección de Categoría */}
       <CategorySelectionModal

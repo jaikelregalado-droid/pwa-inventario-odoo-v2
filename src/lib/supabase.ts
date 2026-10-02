@@ -5,6 +5,7 @@
 
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { RealtimeCountUpdate, AuditorPresence, AuditSession } from '../types';
+import { encodeCountHistory, decodeCountHistory } from './historyHelper';
 
 const STORAGE_KEY_CONFIG = 'odoo_audit_supabase_config';
 const STORAGE_KEY_COUNTS = 'odoo_audit_counts_cache_';
@@ -234,6 +235,7 @@ export function subscribeToAuditSession(
     (payload) => {
       const row = (payload.new || payload.old) as any;
       if (row && (row.quant_id || row.product_id)) {
+        const { history, cleanNotes } = decodeCountHistory(row.notes);
         onCountUpdate({
           quantId: Number(row.quant_id || row.product_id),
           productId: Number(row.product_id || row.quant_id),
@@ -246,7 +248,8 @@ export function subscribeToAuditSession(
           timestamp: row.updated_at || row.created_at || new Date().toISOString(),
           pin: row.pin,
           photoUrl: row.photo_url || undefined,
-          notes: row.notes || undefined,
+          notes: cleanNotes || undefined,
+          countHistory: history.length > 0 ? history : undefined,
         });
       }
     }
@@ -264,6 +267,7 @@ export function subscribeToAuditSession(
     (payload) => {
       const row = (payload.new || payload.old) as any;
       if (row && (row.quant_id || row.product_id)) {
+        const { history, cleanNotes } = decodeCountHistory(row.notes);
         onCountUpdate({
           quantId: Number(row.quant_id || row.product_id),
           productId: Number(row.product_id || row.quant_id),
@@ -276,7 +280,8 @@ export function subscribeToAuditSession(
           timestamp: row.updated_at || row.created_at || new Date().toISOString(),
           pin: row.pin,
           photoUrl: row.photo_url || undefined,
-          notes: row.notes || undefined,
+          notes: cleanNotes || undefined,
+          countHistory: history.length > 0 ? history : undefined,
         });
       }
     }
@@ -348,7 +353,10 @@ export function subscribeToAuditSession(
 /**
  * Emite una actualización de conteo al canal Realtime y a la base de datos Supabase
  */
-export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise<void> {
+export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise<{ success: boolean; error?: any }> {
+  let isSuccessful = true;
+  let lastError: any = null;
+
   // 1. Enviar por canal local de navegador para sincronizar pestañas instantáneamente
   if (localBroadcastChannel) {
     try {
@@ -382,6 +390,10 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
 
     try {
       // 3.1 Intentar UPSERT en 'audit_items' con esquema enriquecido
+      const notesToSave = update.countHistory && update.countHistory.length > 0
+        ? encodeCountHistory(update.countHistory, update.notes)
+        : (update.notes || null);
+
       const enrichedRecord: Record<string, any> = {
         id: `${update.pin}_${pId}`,
         pin: update.pin,
@@ -392,7 +404,7 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
         is_locked: update.isLocked ?? false,
         auditor_name: update.auditorName,
         photo_url: update.photoUrl || null,
-        notes: update.notes || null,
+        notes: notesToSave,
         updated_at: update.timestamp,
       };
       if (update.productName) enrichedRecord.product_name = update.productName;
@@ -447,9 +459,13 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
 
       if (itemError) {
         console.warn('Nota upsert en audit_items:', itemError.message);
+        isSuccessful = false;
+        lastError = itemError;
       }
     } catch (err) {
       console.warn('Excepción en upsert audit_items:', err);
+      isSuccessful = false;
+      lastError = err;
     }
 
     // 3.2 Como respaldo secundario y compatibilidad, actualizar también audit_counts
@@ -469,6 +485,8 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
       // noop
     }
   }
+
+  return { success: isSuccessful, error: lastError };
 }
 
 /**
@@ -650,20 +668,24 @@ export async function fetchSessionCountsFromSupabase(pin: string): Promise<Realt
       .order('updated_at', { ascending: false });
 
     if (!itemsError && itemsData && itemsData.length > 0) {
-      const mapped: RealtimeCountUpdate[] = itemsData.map((row: any) => ({
-        quantId: Number(row.quant_id || row.product_id || 0),
-        productId: Number(row.product_id || row.quant_id || 0),
-        productName: row.product_name || undefined,
-        barcode: row.barcode || undefined,
-        countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
-        systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
-        isLocked: Boolean(row.is_locked),
-        auditorName: row.auditor_name || 'Auditor',
-        timestamp: row.updated_at || row.created_at || new Date().toISOString(),
-        pin: row.pin,
-        photoUrl: row.photo_url || undefined,
-        notes: row.notes || undefined,
-      }));
+      const mapped: RealtimeCountUpdate[] = itemsData.map((row: any) => {
+        const { history, cleanNotes } = decodeCountHistory(row.notes);
+        return {
+          quantId: Number(row.quant_id || row.product_id || 0),
+          productId: Number(row.product_id || row.quant_id || 0),
+          productName: row.product_name || undefined,
+          barcode: row.barcode || undefined,
+          countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+          systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
+          isLocked: Boolean(row.is_locked),
+          auditorName: row.auditor_name || 'Auditor',
+          timestamp: row.updated_at || row.created_at || new Date().toISOString(),
+          pin: row.pin,
+          photoUrl: row.photo_url || undefined,
+          notes: cleanNotes || undefined,
+          countHistory: history.length > 0 ? history : undefined,
+        };
+      });
 
       try {
         localStorage.setItem(`${STORAGE_KEY_COUNTS}${pin}`, JSON.stringify(mapped));
@@ -680,20 +702,24 @@ export async function fetchSessionCountsFromSupabase(pin: string): Promise<Realt
       .order('updated_at', { ascending: false });
 
     if (!countsError && countsData && countsData.length > 0) {
-      const mapped: RealtimeCountUpdate[] = countsData.map((row: any) => ({
-        quantId: Number(row.quant_id || row.product_id || 0),
-        productId: Number(row.product_id || row.quant_id || 0),
-        productName: row.product_name || undefined,
-        barcode: row.barcode || undefined,
-        countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
-        systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
-        isLocked: Boolean(row.is_locked),
-        auditorName: row.auditor_name || 'Auditor',
-        timestamp: row.updated_at || row.created_at || new Date().toISOString(),
-        pin: row.pin,
-        photoUrl: row.photo_url || undefined,
-        notes: row.notes || undefined,
-      }));
+      const mapped: RealtimeCountUpdate[] = countsData.map((row: any) => {
+        const { history, cleanNotes } = decodeCountHistory(row.notes);
+        return {
+          quantId: Number(row.quant_id || row.product_id || 0),
+          productId: Number(row.product_id || row.quant_id || 0),
+          productName: row.product_name || undefined,
+          barcode: row.barcode || undefined,
+          countedQuantity: Number(row.counted_quantity ?? row.qty ?? row.count ?? 0),
+          systemQuantity: row.system_quantity !== undefined && row.system_quantity !== null ? Number(row.system_quantity) : undefined,
+          isLocked: Boolean(row.is_locked),
+          auditorName: row.auditor_name || 'Auditor',
+          timestamp: row.updated_at || row.created_at || new Date().toISOString(),
+          pin: row.pin,
+          photoUrl: row.photo_url || undefined,
+          notes: cleanNotes || undefined,
+          countHistory: history.length > 0 ? history : undefined,
+        };
+      });
 
       try {
         localStorage.setItem(`${STORAGE_KEY_COUNTS}${pin}`, JSON.stringify(mapped));

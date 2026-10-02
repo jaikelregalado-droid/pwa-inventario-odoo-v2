@@ -17,16 +17,19 @@ import {
   Edit3,
   X,
   Layers,
-  ArrowRight
+  ArrowRight,
+  History
 } from 'lucide-react';
 import { QuantItem } from '../types';
 import { sound } from '../lib/audio';
 
 interface ProductCardProps {
   item: QuantItem;
-  onUpdateCount: (quantId: number, newCount: number, photoUrl?: string) => void;
+  onUpdateCount: (quantId: number, newCount: number, photoUrl?: string, newHistory?: number[]) => void;
   onToggleLock?: (quantId: number) => void;
   isFocused?: boolean;
+  autoOpenBatch?: boolean;
+  onBatchModalOpened?: () => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -34,10 +37,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onUpdateCount,
   onToggleLock,
   isFocused = false,
+  autoOpenBatch = false,
+  onBatchModalOpened,
 }) => {
   // Estado local para input inmediato y fluido
   const [localQC, setLocalQC] = useState<string>(String(item.countedQuantity));
   const [showPhotoModal, setShowPhotoModal] = useState<boolean>(false);
+  const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
   const [isSavedRecently, setIsSavedRecently] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -80,11 +86,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setBatchMode(mode);
     setBatchInputValue('');
     setShowBatchModal(true);
+    // REQUISITO: Diferimiento asíncrono controlado con 150ms para no colapsar el hilo de renderizado
     setTimeout(() => {
       batchInputRef.current?.focus();
       batchInputRef.current?.select();
-    }, 100);
+    }, 150);
   };
+
+  // Apertura automática del modal de lote tras escaneo sin auto-incremento +1
+  useEffect(() => {
+    if (autoOpenBatch) {
+      openBatchModal('add');
+      onBatchModalOpened?.();
+    }
+  }, [autoOpenBatch]);
 
   const handleConfirmBatch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -96,14 +111,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }
 
     const currentCount = parseSafeFloat(localQC);
-    // Fórmula: Si modo Suma -> QC_actual + Valor_ingresado (ej: 15 + 20 = 35 ó 2.51 + 1.25 = 3.76)
-    // Fórmula: Si modo Reemplazar -> Valor_ingresado (ej: 2.51 sustituye a 15)
-    const nextQC = batchMode === 'add'
-      ? Math.max(0, Math.round((currentCount + inputNum) * 1000) / 1000)
-      : Math.max(0, Math.round(inputNum * 1000) / 1000);
+    let nextQC: number;
+    let nextHistory: number[];
+
+    if (batchMode === 'add') {
+      nextQC = Math.max(0, Math.round((currentCount + inputNum) * 1000) / 1000);
+      nextHistory = [...(item.countHistory || []), inputNum];
+    } else {
+      nextQC = Math.max(0, Math.round(inputNum * 1000) / 1000);
+      nextHistory = [inputNum];
+    }
 
     sound.playCountUp();
-    commitCount(nextQC);
+    commitCount(nextQC, undefined, nextHistory);
     setShowBatchModal(false);
   };
 
@@ -126,11 +146,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }
   }, [isFocused]);
 
-  const commitCount = (val: number, photo?: string) => {
+  const commitCount = (val: number, photo?: string, newHistory?: number[]) => {
     // Admite hasta 3 decimales para productos por peso o fracción
     const validNumber = Math.max(0, isNaN(val) ? 0 : Math.round(val * 1000) / 1000);
     setLocalQC(String(validNumber));
-    onUpdateCount(item.id, validNumber, photo !== undefined ? photo : item.photoUrl);
+    const finalHistory = newHistory !== undefined ? newHistory : (item.countHistory || []);
+    onUpdateCount(item.id, validNumber, photo !== undefined ? photo : item.photoUrl, finalHistory);
 
     setIsSavedRecently(true);
     setTimeout(() => setIsSavedRecently(false), 1200);
@@ -146,7 +167,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     const parsed = parseFloat(sanitized);
     if (!isNaN(parsed) && parsed !== item.countedQuantity) {
       sound.playCountUp();
-      commitCount(parsed);
+      const current = item.countedQuantity || 0;
+      const delta = Math.round((parsed - current) * 1000) / 1000;
+      const nextHistory = (item.countHistory && item.countHistory.length > 0)
+        ? [...item.countHistory, delta]
+        : [parsed];
+      commitCount(parsed, undefined, nextHistory);
     } else if (isNaN(parsed)) {
       setLocalQC(String(item.countedQuantity));
     } else {
@@ -156,6 +182,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
+      e.preventDefault();
       (e.target as HTMLInputElement).blur();
     }
   };
@@ -163,12 +190,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const increment = (delta: number) => {
     const current = parseSafeFloat(localQC);
     const nextVal = Math.max(0, Math.round((current + delta) * 1000) / 1000);
+    const nextHistory = [...(item.countHistory || []), delta];
     if (delta > 0) {
       sound.playCountUp();
     } else {
       sound.playCountDown();
     }
-    commitCount(nextVal);
+    commitCount(nextVal, undefined, nextHistory);
   };
 
   // Captura de fotografía de evidencia con cámara nativa
@@ -204,9 +232,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   return (
     <div
       ref={cardRef}
-      className={`relative rounded-2xl bg-slate-900/90 border transition-all duration-200 overflow-hidden shadow-lg ${
+      className={`relative rounded-2xl bg-slate-900/90 border transition-all duration-300 overflow-hidden shadow-lg ${
         isFocused
-          ? 'border-emerald-500 ring-4 ring-emerald-500/40 shadow-2xl shadow-emerald-950/80 scale-[1.02] bg-slate-900/95'
+          ? 'border-emerald-400 ring-4 ring-emerald-500/50 shadow-2xl shadow-emerald-950/90 scale-[1.02] bg-slate-900/95 animate-pulse'
           : 'border-slate-800 hover:border-slate-700/80 shadow-slate-950/50'
       }`}
     >
@@ -222,7 +250,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {/* Botón de Historial de Conteos Parciales */}
+          <button
+            type="button"
+            onClick={() => setShowHistoryModal(true)}
+            className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg border transition cursor-pointer ${
+              item.countHistory && item.countHistory.length > 0
+                ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-300 hover:bg-indigo-900/80'
+                : 'bg-slate-800/80 border-slate-700/60 text-slate-400 hover:text-slate-200'
+            }`}
+            title="Ver desglose de conteos parciales"
+          >
+            <History className="w-3 h-3 text-indigo-400" />
+            <span>Historial{item.countHistory && item.countHistory.length > 0 ? ` (${item.countHistory.length})` : ''}</span>
+          </button>
+
           {item.isLocked && (
             <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-500/50 shadow-xs">
               <Lock className="w-2.5 h-2.5 text-amber-400" />
@@ -268,6 +311,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </span>
             )}
           </div>
+
+          {/* Desglose de Historial si existen aportes registrados */}
+          {item.countHistory && item.countHistory.length > 0 && (
+            <div
+              onClick={() => setShowHistoryModal(true)}
+              className="mt-2 flex items-center justify-between p-1.5 px-2.5 rounded-lg bg-indigo-950/40 border border-indigo-500/30 text-[11px] font-mono text-indigo-300 hover:bg-indigo-900/40 transition cursor-pointer"
+              title="Haz clic para ver el desglose completo de aportes"
+            >
+              <div className="flex items-center gap-1.5 min-w-0 truncate">
+                <span className="text-slate-400 font-sans font-medium text-[10px]">Historial:</span>
+                <span className="truncate">{item.countHistory.map(n => n >= 0 ? `+${n}` : `${n}`).join(' ')}</span>
+              </div>
+              <span className="font-bold text-indigo-200 shrink-0 ml-2">= Total {currentCounted}</span>
+            </div>
+          )}
         </div>
 
         {/* Métricas Principales: QS (Sistema), QC (Contado) y DQ (Diferencia) */}
@@ -361,7 +419,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </button>
 
             {/* Input Editable Directo para números enteros o decimales (inputMode="decimal") */}
-            <div className="relative w-28">
+            <form onSubmit={(e) => { e.preventDefault(); }} className="relative w-28">
               <input
                 type="text"
                 inputMode="decimal"
@@ -376,7 +434,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 spellCheck="false"
                 title="Escribe la cantidad contada con decimales (ej. 2.51)"
               />
-            </div>
+            </form>
 
             {/* Botón '+' principal: Abre el cuadro de diálogo/modal numérico rápido para ingreso por lote */}
             <button
@@ -775,6 +833,82 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     ? `Confirmar y Sumar (${parseSafeFloat(batchInputValue) ? `+${parseSafeFloat(batchInputValue)}` : '0'})`
                     : `Confirmar Total (${parseSafeFloat(batchInputValue)})`}
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Historial de Conteos Parciales */}
+      {showHistoryModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+          onClick={() => setShowHistoryModal(false)}
+        >
+          <div
+            className="relative max-w-sm w-full bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl p-5 text-slate-100 overflow-hidden flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">Historial de Aportes</h4>
+                  <p className="text-[11px] text-slate-400 line-clamp-1">{item.productName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-3.5 space-y-2 text-xs">
+              {item.countHistory && item.countHistory.length > 0 ? (
+                <>
+                  <div className="space-y-1.5">
+                    {item.countHistory.map((val, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono"
+                      >
+                        <span className="text-slate-400 font-sans text-xs">
+                          Aporte #{idx + 1}
+                        </span>
+                        <span className={`font-bold text-sm ${val >= 0 ? 'text-indigo-300' : 'text-rose-300'}`}>
+                          {val >= 0 ? `+${val}` : `${val}`} uds.
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between font-mono">
+                    <span className="text-slate-300 font-sans font-bold text-xs">Total Conteo Físico (QC):</span>
+                    <span className="text-base font-black text-white">{currentCounted} uds.</span>
+                  </div>
+                </>
+              ) : (
+                <div className="py-8 text-center text-slate-400 space-y-1">
+                  <p className="font-medium">Sin aportes registrados aún.</p>
+                  <p className="text-[11px] text-slate-500">
+                    Usa el botón '+' o el ajuste rápido para registrar lotes.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition cursor-pointer text-center"
+              >
+                Cerrar
               </button>
             </div>
           </div>

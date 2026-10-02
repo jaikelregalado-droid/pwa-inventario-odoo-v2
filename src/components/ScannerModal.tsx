@@ -264,10 +264,13 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       setProcessingStatus(`✓ Código identificado: ${sanitized}`);
       sound.playScan();
 
+      // REQUISITO: Detener la cámara inmediatamente para liberar la memoria RAM antes del teclado
+      cleanupCamera();
+
       setTimeout(() => {
         onBarcodeDetected(sanitized);
         onClose();
-      }, 500);
+      }, 350);
     } else {
       sound.playError();
       setErrorMsg(
@@ -322,6 +325,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const handleConfirmManualCode = () => {
     const clean = manualCodeInput.trim();
     if (!clean) return;
+    cleanupCamera();
     sound.playScan();
     onBarcodeDetected(clean);
     onClose();
