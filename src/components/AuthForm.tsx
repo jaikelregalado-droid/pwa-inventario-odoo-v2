@@ -24,7 +24,7 @@ import {
   Check,
   Copy
 } from 'lucide-react';
-import { OdooConnectionConfig, OdooCompany, OdooLocation, OdooCategory, AuditSession, RealtimeCountUpdate } from '../types';
+import { OdooConnectionConfig, OdooCompany, OdooLocation, OdooCategory, AuditSession, RealtimeCountUpdate, QuantItem } from '../types';
 import { sanitizeOdooUrl, authenticateOdoo, fetchLocations, fetchCategories, getDemoFVGrupoData, getCachedUid } from '../lib/odoo';
 import {
   generateSessionPin,
@@ -46,7 +46,8 @@ interface AuthFormProps {
     session: AuditSession,
     config: OdooConnectionConfig,
     isDemo: boolean,
-    initialCounts?: RealtimeCountUpdate[]
+    initialCounts?: RealtimeCountUpdate[],
+    initialCustomItems?: QuantItem[]
   ) => void;
   savedConfig?: OdooConnectionConfig;
 }

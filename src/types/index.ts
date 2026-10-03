@@ -69,6 +69,7 @@ export interface AuditSession {
   locationId?: number;
   categoryId?: number;
   categoryName?: string;
+  startedAt?: string;
 }
 
 export interface RealtimeCountUpdate {

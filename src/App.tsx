@@ -66,6 +66,7 @@ import { SyncModal } from './components/SyncModal';
 import { ScannerModal } from './components/ScannerModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { CategorySelectionModal } from './components/CategorySelectionModal';
+import { CustomInventoryModal } from './components/CustomInventoryModal';
 
 const STORAGE_SESSION_KEY = 'odoo_audit_session_data';
 const STORAGE_CONFIG_KEY = 'odoo_audit_config_data';
@@ -152,6 +153,7 @@ export default function App() {
   const [showOdooModal, setShowOdooModal] = useState<boolean>(false);
   const [showRealtimeModal, setShowRealtimeModal] = useState<boolean>(false);
   const [showCameraScanner, setShowCameraScanner] = useState<boolean>(false);
+  const [showCustomInventoryModal, setShowCustomInventoryModal] = useState<boolean>(false);
 
   // Guardar sesión en localStorage para mantener al auditor dentro aunque recargue
   useEffect(() => {
@@ -293,6 +295,21 @@ export default function App() {
     setLoadError(null);
 
     const activePin = session?.pin || localStorage.getItem('odoo_audit_active_pin');
+
+    // REQUISITO: Verificar si la sesión activa corresponde a un Inventario Personalizado Multi-Departamento
+    if (activePin) {
+      const customRaw = localStorage.getItem(`odoo_audit_custom_inventory_${activePin}`);
+      if (customRaw) {
+        try {
+          const parsedCustom = JSON.parse(customRaw);
+          if (Array.isArray(parsedCustom) && parsedCustom.length > 0) {
+            setItems(parsedCustom);
+            setIsLoadingItems(false);
+            return;
+          }
+        } catch {}
+      }
+    }
 
     // REQUISITO: Si estamos offline y hay datos guardados localmente, cargar catálogo de inmediato
     if (!navigator.onLine && activePin) {
@@ -979,10 +996,19 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
         <AuthForm
-          onSessionStarted={(newSession, config, isDemo, initialCounts) => {
+          onSessionStarted={(newSession, config, isDemo, initialCounts, initialCustomItems) => {
             setIsDemoMode(isDemo);
             setOdooConfig(config);
             setSession(newSession);
+
+            if (initialCustomItems && initialCustomItems.length > 0) {
+              // REQUISITO: Cargar directamente los productos elegidos del inventario multi-departamento
+              setItems(initialCustomItems);
+              saveOfflineCatalog(newSession.pin, initialCustomItems);
+              setIsCategoryModalOpen(false);
+              return;
+            }
+
             setItems([]); // Limpiar la lista anterior explícitamente
 
             // Si la sesión ya tiene categoría configurada en Supabase (ej. creada previamente por el Lead)
@@ -1393,7 +1419,41 @@ export default function App() {
         onSelectCategory={handleCategorySelected}
         onClose={handleCategoryModalClose}
         onRetryLoadCategories={() => loadCategoriesOnly(odooConfig, isDemoMode)}
+        onOpenCustomInventory={() => {
+          setIsCategoryModalOpen(false);
+          setShowCustomInventoryModal(true);
+        }}
       />
+
+      {/* Modal para Crear Inventario Personalizado Multi-Departamento desde Selección de Categorías */}
+      {showCustomInventoryModal && odooConfig && session && (
+        <CustomInventoryModal
+          isOpen={showCustomInventoryModal}
+          onClose={() => {
+            setShowCustomInventoryModal(false);
+            if (!session.categoryId && (!items || items.length === 0)) {
+              setIsCategoryModalOpen(true);
+            }
+          }}
+          odooConfig={odooConfig}
+          isDemo={isDemoMode}
+          currentAuditorName={session.auditorName}
+          currentPin={session.pin}
+          onStartCustomAudit={(customSession, _cfg, customItems) => {
+            setSession(customSession);
+            setItems(customItems);
+            saveOfflineCatalog(customSession.pin, customItems);
+            setIsCategoryModalOpen(false);
+            setShowCustomInventoryModal(false);
+            sound.playSuccess();
+            setScannerAlert({
+              message: `✓ Inventario personalizado cargado (${customItems.length} productos)`,
+              type: 'success',
+              id: Date.now(),
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

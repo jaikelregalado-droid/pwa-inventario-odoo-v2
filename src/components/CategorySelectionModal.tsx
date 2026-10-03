@@ -9,7 +9,9 @@ import {
   User,
   MapPin,
   Key,
-  X
+  X,
+  Boxes,
+  Sparkles
 } from 'lucide-react';
 import { OdooCategory } from '../types';
 
@@ -26,6 +28,7 @@ interface CategorySelectionModalProps {
   onSelectCategory: (category: OdooCategory) => void;
   onClose?: () => void;
   onRetryLoadCategories?: () => void;
+  onOpenCustomInventory?: () => void;
 }
 
 export const CategorySelectionModal: React.FC<CategorySelectionModalProps> = ({
@@ -41,6 +44,7 @@ export const CategorySelectionModal: React.FC<CategorySelectionModalProps> = ({
   onSelectCategory,
   onClose,
   onRetryLoadCategories,
+  onOpenCustomInventory,
 }) => {
   const [selectedCatId, setSelectedCatId] = useState<number | null>(currentCategoryId || null);
   const [search, setSearch] = useState('');
@@ -147,6 +151,29 @@ export const CategorySelectionModal: React.FC<CategorySelectionModalProps> = ({
             )}
           </div>
         </div>
+
+        {/* Barra con botón azul redondeado para Crear Inventario Personalizado */}
+        {onOpenCustomInventory && (
+          <div className="px-4 py-2.5 sm:px-6 bg-gradient-to-r from-blue-950/70 via-slate-900 to-indigo-950/70 border-b border-blue-500/25 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="p-1.5 rounded-lg bg-blue-600/30 text-blue-400 border border-blue-500/30 shrink-0">
+                <Boxes className="w-4 h-4" />
+              </span>
+              <div className="truncate">
+                <span className="text-xs font-bold text-white block truncate">¿Múltiples categorías o departamentos?</span>
+                <span className="text-[10px] text-slate-400 block truncate">Arma un inventario a medida con buscador global</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenCustomInventory}
+              className="px-3.5 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs shadow-md shadow-blue-950 transition cursor-pointer shrink-0 flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Crear Personalizado</span>
+            </button>
+          </div>
+        )}
 
         {/* Lista de Categorías con scroll */}
         <div className="flex-1 overflow-y-auto p-3.5 space-y-2 min-h-[220px]">

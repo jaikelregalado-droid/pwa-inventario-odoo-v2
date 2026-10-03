@@ -86,6 +86,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setBatchMode(mode);
     setBatchInputValue('');
     setShowBatchModal(true);
+    // REQUISITO: Scroll al inicio con scroll-margin-top 120px para mantener la tarjeta visible arriba
+    if (cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     // REQUISITO: Diferimiento asíncrono controlado con 150ms para no colapsar el hilo de renderizado
     setTimeout(() => {
       batchInputRef.current?.focus();
@@ -142,9 +146,46 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   // Si se enfoca por escáner de código de barras
   useEffect(() => {
     if (isFocused && cardRef.current) {
-      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // REQUISITO: Utiliza 'block: start' con un margen de desplazamiento superior (scroll-margin-top: 120px)
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [isFocused]);
+
+  // Estados para edición y eliminación individual en el historial de conteos parciales
+  const [editingHistoryIdx, setEditingHistoryIdx] = useState<number | null>(null);
+  const [editingHistoryVal, setEditingHistoryVal] = useState<string>('');
+
+  const handleDeleteHistoryEntry = (idxToDelete: number) => {
+    const prevHistory = item.countHistory || [];
+    const nextHistory = prevHistory.filter((_, idx) => idx !== idxToDelete);
+    // Recalcular automáticamente el total de QC sumando todos los valores actualizados
+    const nextQC = Math.max(0, Math.round(nextHistory.reduce((sum, n) => sum + n, 0) * 1000) / 1000);
+    sound.playCountDown();
+    commitCount(nextQC, undefined, nextHistory);
+    if (editingHistoryIdx === idxToDelete) {
+      setEditingHistoryIdx(null);
+    }
+  };
+
+  const handleStartEditHistoryEntry = (idx: number, currentVal: number) => {
+    setEditingHistoryIdx(idx);
+    setEditingHistoryVal(String(currentVal));
+  };
+
+  const handleSaveEditHistoryEntry = (idx: number) => {
+    const sanitized = sanitizeDecimalInput(editingHistoryVal);
+    const parsed = parseFloat(sanitized);
+    if (isNaN(parsed)) return;
+
+    const validVal = Math.round(parsed * 1000) / 1000;
+    const prevHistory = item.countHistory || [];
+    const nextHistory = prevHistory.map((val, i) => (i === idx ? validVal : val));
+    // Recalcular automáticamente el total de QC sumando todos los valores actualizados
+    const nextQC = Math.max(0, Math.round(nextHistory.reduce((sum, n) => sum + n, 0) * 1000) / 1000);
+    sound.playScan();
+    commitCount(nextQC, undefined, nextHistory);
+    setEditingHistoryIdx(null);
+  };
 
   const commitCount = (val: number, photo?: string, newHistory?: number[]) => {
     // Admite hasta 3 decimales para productos por peso o fracción
@@ -232,7 +273,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   return (
     <div
       ref={cardRef}
-      className={`relative rounded-2xl bg-slate-900/90 border transition-all duration-300 overflow-hidden shadow-lg ${
+      style={{ scrollMarginTop: '120px' }}
+      className={`relative rounded-2xl bg-slate-900/90 border transition-all duration-300 overflow-hidden shadow-lg scroll-mt-[120px] ${
         isFocused
           ? 'border-emerald-400 ring-4 ring-emerald-500/50 shadow-2xl shadow-emerald-950/90 scale-[1.02] bg-slate-900/95 animate-pulse'
           : 'border-slate-800 hover:border-slate-700/80 shadow-slate-950/50'
@@ -583,18 +625,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
       )}
 
-      {/* Modal/Cuadro de Diálogo Numérico Rápido para Ingreso por Lote y Corrección */}
+      {/* Modal/Cuadro de Diálogo Numérico Rápido para Ingreso por Lote configurado como Bottom Sheet */}
       {showBatchModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/45 backdrop-blur-[2px] p-0 sm:p-4 animate-in fade-in"
           onClick={() => setShowBatchModal(false)}
         >
           <div
-            className="relative max-w-md w-full max-h-[85vh] bg-slate-900 border border-slate-700/80 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-slate-100"
+            className="relative w-full max-w-2xl mx-auto bg-slate-900 border-t-2 border-x-2 sm:border-2 border-indigo-500/50 rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[58vh] flex flex-col overflow-hidden text-slate-100 animate-in slide-in-from-bottom duration-300 pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Tirador visual de Bottom Sheet para dispositivos táctiles */}
+            <div className="w-12 h-1.5 rounded-full bg-slate-700/80 mx-auto mt-2.5 mb-0.5 sm:hidden shrink-0"></div>
+
             {/* 1. Cabecera fija superior */}
-            <div className="shrink-0 px-4 pt-3.5 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 border-b border-slate-800/90 bg-slate-900/95 flex items-start justify-between gap-2">
+            <div className="shrink-0 px-4 pt-2.5 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 border-b border-slate-800/90 bg-slate-900/95 flex items-start justify-between gap-2">
               <div className="space-y-0.5 min-w-0 pr-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-950/80 border border-indigo-500/40 text-indigo-400 font-mono text-[10px] font-bold">
@@ -871,20 +916,92 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <div className="flex-1 overflow-y-auto py-3.5 space-y-2 text-xs">
               {item.countHistory && item.countHistory.length > 0 ? (
                 <>
-                  <div className="space-y-1.5">
-                    {item.countHistory.map((val, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono"
-                      >
-                        <span className="text-slate-400 font-sans text-xs">
-                          Aporte #{idx + 1}
-                        </span>
-                        <span className={`font-bold text-sm ${val >= 0 ? 'text-indigo-300' : 'text-rose-300'}`}>
-                          {val >= 0 ? `+${val}` : `${val}`} uds.
-                        </span>
-                      </div>
-                    ))}
+                  <div className="space-y-2">
+                    {item.countHistory.map((val, idx) => {
+                      const isEditing = editingHistoryIdx === idx;
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono transition-colors hover:border-slate-700"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 font-sans text-[11px] font-bold">
+                              [#{idx + 1}]
+                            </span>
+                            {isEditing ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] text-slate-400 font-sans">Cantidad:</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={editingHistoryVal}
+                                  onChange={(e) => setEditingHistoryVal(sanitizeDecimalInput(e.target.value))}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSaveEditHistoryEntry(idx);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingHistoryIdx(null);
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="w-20 px-2 py-1 rounded-lg bg-slate-900 border-2 border-indigo-500 font-mono text-xs font-bold text-white outline-none"
+                                />
+                              </div>
+                            ) : (
+                              <span className="text-slate-300 font-sans text-xs">
+                                Cantidad: <strong className={`font-mono text-sm ${val >= 0 ? 'text-indigo-300' : 'text-rose-300'}`}>{val}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Botones de Acción: Editar y Eliminar */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditHistoryEntry(idx)}
+                                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer"
+                                  title="Guardar cambio y recalcular total"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingHistoryIdx(null)}
+                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+                                  title="Cancelar edición"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditHistoryEntry(idx, val)}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-indigo-900/60 hover:text-indigo-300 text-slate-400 border border-slate-700/60 transition cursor-pointer text-[11px]"
+                                  title="Editar esta cantidad"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  <span className="hidden sm:inline font-sans">Editar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteHistoryEntry(idx)}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/60 hover:text-rose-300 text-slate-400 border border-slate-700/60 transition cursor-pointer text-[11px]"
+                                  title="Eliminar este aporte"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span className="hidden sm:inline font-sans">Eliminar</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div className="mt-3 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between font-mono">

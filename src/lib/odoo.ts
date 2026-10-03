@@ -159,13 +159,29 @@ export async function executeJsonRpc<T = any>(
     }
   }
 
+  // 3. Formatear args para la llamada JSON-RPC:
+  // En Odoo 17, execute_kw recibe de 5 a 6 argumentos posicionales:
+  // [db, uid, password, model, method, args]
+  // Si args ya cuenta con 6 elementos (incluyendo el array de argumentos del método),
+  // se envían exactamente esos 6 argumentos y se elimina cualquier 7mo argumento posicional.
+  let rpcArgs = args;
+  if (service === 'object' && method === 'execute_kw') {
+    if (args.length >= 6) {
+      rpcArgs = args.slice(0, 6);
+    } else if (kwargs && Object.keys(kwargs).length > 0) {
+      rpcArgs = [...args, kwargs];
+    }
+  } else if (service === 'object') {
+    rpcArgs = kwargs && Object.keys(kwargs).length > 0 ? [...args, kwargs] : args;
+  }
+
   const payload = {
     jsonrpc: '2.0',
     method: 'call',
     params: {
       service,
       method,
-      args: service === 'object' ? [...args, kwargs] : args,
+      args: rpcArgs,
     },
     id: Math.floor(Math.random() * 10000000),
   };
@@ -1326,4 +1342,181 @@ export async function lookupGlobalProductInOdoo(
     return { found: false };
   }
 }
+
+/**
+ * Busca productos en el catálogo global de Odoo (multi-departamento) para armar un inventario personalizado
+ */
+export async function searchGlobalProductsForCustomAudit(
+  config: OdooConnectionConfig,
+  searchTerm: string,
+  isDemo: boolean = false
+): Promise<QuantItem[]> {
+  const query = (searchTerm || '').trim();
+
+  // 1. Modo Demo con productos multi-departamento
+  if (isDemo || config.url.includes('demo')) {
+    const demoData = getDemoFVGrupoData();
+    if (!query) {
+      return demoData.quants;
+    }
+    const qLower = query.toLowerCase();
+    return demoData.quants.filter((q) =>
+      q.productName.toLowerCase().includes(qLower) ||
+      (q.defaultCode && q.defaultCode.toLowerCase().includes(qLower)) ||
+      (q.barcode && q.barcode.toLowerCase().includes(qLower)) ||
+      (q.categName && q.categName.toLowerCase().includes(qLower))
+    );
+  }
+
+  // 2. Conexión real con Odoo 17 JSON-RPC
+  try {
+    const uid = await ensureAuthenticatedUid(config);
+    if (!uid) {
+      throw new Error('Credenciales de Odoo no válidas o expiradas');
+    }
+
+    // Regla 3: Si no hay término de búsqueda ingresado (campo vacío),
+    // consultar los primeros 50 productos generales usando un dominio vacío [] con un límite 50
+    let domain: any[] = [];
+    if (query) {
+      domain = [
+        '|',
+        '|',
+        ['name', 'ilike', query],
+        ['barcode', 'ilike', query],
+        ['default_code', 'ilike', query]
+      ];
+    }
+
+    // Campos solicitados: 'id', 'display_name', 'barcode', 'default_code', 'qty_available', 'categ_id'
+    const productFields = [
+      'id',
+      'display_name',
+      'name',
+      'barcode',
+      'default_code',
+      'qty_available',
+      'categ_id',
+    ];
+
+    // Argumento 6 de execute_kw: Lista de argumentos posicionales para search_read:
+    // [domain, fields, offset, limit] -> [domain, productFields, 0, 50]
+    const searchReadArgs = [
+      domain,
+      productFields,
+      0,
+      50,
+    ];
+
+    // LLAMADA RPC EXACTA DE 6 ARGUMENTOS POSICIONALES (SIN POSICIÓN 7):
+    // 1. db (String): nombre de la base de datos
+    // 2. uid (Integer): ID de usuario autenticado
+    // 3. password (String): contraseña o API Key
+    // 4. model (String): 'product.product'
+    // 5. method (String): 'search_read'
+    // 6. args (Array/List): [[domain], [fields], 0, 50]
+    const products = await executeJsonRpc<Array<{
+      id: number;
+      name?: string;
+      display_name?: string;
+      default_code?: string | false;
+      barcode?: string | false;
+      qty_available?: number;
+      categ_id?: [number, string] | number | false;
+    }>>(
+      config,
+      'object',
+      'execute_kw',
+      [
+        config.db,
+        uid,
+        config.apiKey,
+        'product.product',
+        'search_read',
+        searchReadArgs,
+      ]
+    );
+
+    if (!products || products.length === 0) {
+      return [];
+    }
+
+    // Buscar existencias asociadas en stock.quant para cada producto (también con exactamente 6 args posicionales)
+    const productIds = products.map((p) => p.id);
+    const quantsMap = new Map<number, { id: number; location_id: any; quantity: number }>();
+
+    try {
+      const quantArgs = [
+        [['product_id', 'in', productIds], ['location_id.usage', '=', 'internal']],
+        ['id', 'product_id', 'location_id', 'quantity'],
+        0,
+        200,
+      ];
+
+      const quants = await executeJsonRpc<Array<{
+        id: number;
+        product_id: [number, string] | number;
+        location_id: [number, string] | number;
+        quantity: number;
+      }>>(
+        config,
+        'object',
+        'execute_kw',
+        [
+          config.db,
+          uid,
+          config.apiKey,
+          'stock.quant',
+          'search_read',
+          quantArgs,
+        ]
+      );
+
+      if (quants && quants.length > 0) {
+        for (const q of quants) {
+          const pId = Array.isArray(q.product_id) ? q.product_id[0] : q.product_id;
+          if (!quantsMap.has(pId)) {
+            quantsMap.set(pId, { ...q });
+          } else {
+            const existing = quantsMap.get(pId)!;
+            existing.quantity = (existing.quantity || 0) + (q.quantity || 0);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Advertencia buscando stock.quant para inventario personalizado:', e);
+    }
+
+    return products.map((p) => {
+      const quant = quantsMap.get(p.id);
+      const categId = Array.isArray(p.categ_id) ? p.categ_id[0] : (typeof p.categ_id === 'number' ? p.categ_id : undefined);
+      const categName = Array.isArray(p.categ_id) ? p.categ_id[1] : undefined;
+      const locationId = quant && Array.isArray(quant.location_id) ? quant.location_id[0] : (quant ? quant.location_id : undefined);
+      const locationName = quant && Array.isArray(quant.location_id) ? quant.location_id[1] : 'Multi-Ubicación';
+      const rawQty = quant ? quant.quantity : (typeof p.qty_available === 'number' ? p.qty_available : 0);
+      const systemQty = Math.round(rawQty * 1000) / 1000;
+
+      return {
+        id: quant ? quant.id : (p.id + 100000),
+        productId: p.id,
+        productName: p.display_name || p.name || `Producto #${p.id}`,
+        defaultCode: cleanCode(p.default_code || ''),
+        barcode: p.barcode ? String(p.barcode) : '',
+        locationId,
+        locationName,
+        categId,
+        categName,
+        quantity: systemQty,
+        inventoryQuantity: 0,
+        countedQuantity: 0,
+        difference: -systemQty,
+        isLocked: false,
+      };
+    });
+  } catch (err) {
+    console.error('Error buscando productos globales en Odoo:', err);
+    throw err;
+  }
+}
+
 
