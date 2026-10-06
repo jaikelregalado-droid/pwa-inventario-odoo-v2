@@ -442,7 +442,7 @@ export async function fetchLocations(config: OdooConnectionConfig): Promise<Odoo
 export async function fetchQuants(
   config: OdooConnectionConfig,
   locationId?: number,
-  categoryId?: number,
+  categoryId?: number | number[],
   searchQuery?: string
 ): Promise<QuantItem[]> {
   const { db, apiKey, companyId } = config;
@@ -536,8 +536,13 @@ export async function fetchQuants(
     quantDomain.push(['location_id.complete_name', 'ilike', 'WH%']);
   }
 
-  if (categoryId) {
-    quantDomain.push(['product_id.categ_id', 'child_of', categoryId]);
+  // Extraer IDs de categorías seleccionadas (soporte para selección individual o múltiple)
+  const selectedCatIds: number[] = Array.isArray(categoryId)
+    ? categoryId.filter((id): id is number => typeof id === 'number' && id > 0)
+    : (typeof categoryId === 'number' && categoryId > 0 ? [categoryId] : []);
+
+  if (selectedCatIds.length > 0) {
+    quantDomain.push(['product_id.categ_id', 'in', selectedCatIds]);
   }
 
   let rawQuants: Array<{
@@ -584,8 +589,8 @@ export async function fetchQuants(
       } else if (whLocationIds.length > 0) {
         fallbackDomain.push(['location_id', 'in', whLocationIds]);
       }
-      if (categoryId) {
-        fallbackDomain.push(['product_id.categ_id', 'child_of', categoryId]);
+      if (selectedCatIds.length > 0) {
+        fallbackDomain.push(['product_id.categ_id', 'in', selectedCatIds]);
       }
       rawQuants = await executeJsonRpc(
         config,
@@ -605,19 +610,19 @@ export async function fetchQuants(
   }
 
   // 3. Consulta de Catálogo product.product filtrado directamente por categ_id (100% de ítems sin límite)
-  // Permite traer todos los productos de la categoría seleccionada, incluso si aún no tienen stock.quant
+  // REQUISITO EXACTO DE ODOO RPC: [['categ_id', 'in', selected_category_ids]]
   let catalogProducts: Array<{
     id: number;
     name?: string;
     display_name?: string;
     default_code?: string | false;
     barcode?: string | false;
-    categ_id?: [number, string] | false;
+    categ_id?: [number, string] | number | false;
   }> = [];
 
   const productDomain: any[] = [];
-  if (categoryId) {
-    productDomain.push(['categ_id', 'child_of', categoryId]);
+  if (selectedCatIds.length > 0) {
+    productDomain.push(['categ_id', 'in', selectedCatIds]);
   }
 
   try {
@@ -627,7 +632,7 @@ export async function fetchQuants(
       display_name?: string;
       default_code?: string | false;
       barcode?: string | false;
-      categ_id?: [number, string] | false;
+      categ_id?: [number, string] | number | false;
     }>>(
       config,
       'object',
@@ -646,6 +651,62 @@ export async function fetchQuants(
         context: companyContext,
       }
     );
+
+    // REQUISITO: Concatenar productos de TODAS las categorías consultadas
+    // Si se seleccionaron 2 o más categorías (ej. Frutas y Verduras), verificar si todas las categorías
+    // aportaron productos. Si alguna no vino en la respuesta combinada, consultar individualmente y concatenar.
+    if (selectedCatIds.length > 1) {
+      const existingProductIds = new Set((catalogProducts || []).map((p) => p.id));
+      const returnedCatIds = new Set(
+        (catalogProducts || [])
+          .map((p) => (Array.isArray(p.categ_id) ? p.categ_id[0] : (typeof p.categ_id === 'number' ? p.categ_id : null)))
+          .filter((id): id is number => typeof id === 'number')
+      );
+
+      for (const singleCatId of selectedCatIds) {
+        try {
+          const singleProducts = await executeJsonRpc<Array<{
+            id: number;
+            name?: string;
+            display_name?: string;
+            default_code?: string | false;
+            barcode?: string | false;
+            categ_id?: [number, string] | number | false;
+          }>>(
+            config,
+            'object',
+            'execute_kw',
+            [
+              db,
+              uid,
+              apiKey,
+              'product.product',
+              'search_read',
+              [[['categ_id', 'in', [singleCatId]]]],
+            ],
+            {
+              fields: ['id', 'name', 'display_name', 'default_code', 'barcode', 'categ_id'],
+              limit: 0,
+              context: companyContext,
+            }
+          );
+
+          if (singleProducts && singleProducts.length > 0) {
+            for (const sp of singleProducts) {
+              if (!existingProductIds.has(sp.id)) {
+                if (!sp.categ_id) {
+                  sp.categ_id = singleCatId;
+                }
+                catalogProducts.push(sp);
+                existingProductIds.add(sp.id);
+              }
+            }
+          }
+        } catch (singleErr) {
+          console.warn(`Consulta individual categoría ${singleCatId}:`, singleErr);
+        }
+      }
+    }
   } catch (productErr: any) {
     console.warn('Consulta en product.product:', productErr);
     if (!rawQuants || rawQuants.length === 0) {
@@ -731,11 +792,17 @@ export async function fetchQuants(
       cleanCode(catalogProd?.default_code ? String(catalogProd.default_code) : '') || bracketCode;
     const barcode = cleanCode(catalogProd?.barcode ? String(catalogProd.barcode) : '');
 
-    let itemCategId = categoryId;
+    let itemCategId: number | undefined;
     let itemCategName: string | undefined;
     if (catalogProd && Array.isArray(catalogProd.categ_id)) {
       itemCategId = catalogProd.categ_id[0];
       itemCategName = catalogProd.categ_id[1];
+    } else if (catalogProd && typeof catalogProd.categ_id === 'number') {
+      itemCategId = catalogProd.categ_id;
+    } else if (typeof categoryId === 'number') {
+      itemCategId = categoryId;
+    } else if (Array.isArray(categoryId) && categoryId.length === 1) {
+      itemCategId = categoryId[0];
     }
 
     // BLIND COUNT: Por defecto en 0 para obligar a realizar el conteo físico desde cero
@@ -777,11 +844,17 @@ export async function fetchQuants(
     const defaultCode = cleanCode(p.default_code ? String(p.default_code) : '') || bracketCode;
     const barcode = cleanCode(p.barcode ? String(p.barcode) : '');
 
-    let itemCategId = categoryId;
+    let itemCategId: number | undefined;
     let itemCategName: string | undefined;
     if (Array.isArray(p.categ_id)) {
       itemCategId = p.categ_id[0];
       itemCategName = p.categ_id[1];
+    } else if (typeof p.categ_id === 'number') {
+      itemCategId = p.categ_id;
+    } else if (typeof categoryId === 'number') {
+      itemCategId = categoryId;
+    } else if (Array.isArray(categoryId) && categoryId.length === 1) {
+      itemCategId = categoryId[0];
     }
 
     const item: QuantItem = {
@@ -1042,6 +1115,74 @@ export function getDemoFVGrupoData(): {
       isLocked: false,
     },
     {
+      id: 509,
+      productId: 1009,
+      productName: 'Cebolla Morada FV Por Peso',
+      defaultCode: 'CEB-MORADA-FV',
+      barcode: '7591234001091',
+      locationId: 101,
+      locationName: 'WH/Existencias',
+      categId: 206,
+      categName: 'Frutas y Verduras',
+      companyId: 1,
+      quantity: 84.5,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -84.5,
+      isLocked: false,
+    },
+    {
+      id: 510,
+      productId: 1010,
+      productName: 'Plátano Maduro FV Por Peso',
+      defaultCode: 'PLT-MADURO-FV',
+      barcode: '7591234001107',
+      locationId: 101,
+      locationName: 'WH/Existencias',
+      categId: 206,
+      categName: 'Frutas y Verduras',
+      companyId: 1,
+      quantity: 120.0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -120.0,
+      isLocked: false,
+    },
+    {
+      id: 511,
+      productId: 1011,
+      productName: 'Papa Blanca Seleccionada FV Por Peso',
+      defaultCode: 'PAP-BLANCA-FV',
+      barcode: '7591234001114',
+      locationId: 101,
+      locationName: 'WH/Existencias',
+      categId: 206,
+      categName: 'Frutas y Verduras',
+      companyId: 1,
+      quantity: 215.3,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -215.3,
+      isLocked: false,
+    },
+    {
+      id: 512,
+      productId: 1012,
+      productName: 'Manzana Roja Importada FV Por Peso',
+      defaultCode: 'MAN-ROJA-FV',
+      barcode: '7591234001121',
+      locationId: 101,
+      locationName: 'WH/Existencias',
+      categId: 206,
+      categName: 'Frutas y Verduras',
+      companyId: 1,
+      quantity: 45.0,
+      inventoryQuantity: 0,
+      countedQuantity: 0,
+      difference: -45.0,
+      isLocked: false,
+    },
+    {
       id: 501,
       productId: 1001,
       productName: 'Aceite Sintético 5W-30 Ultra Protection 1L',
@@ -1144,11 +1285,11 @@ export function getDemoFVGrupoData(): {
       isLocked: false,
     },
     {
-      id: 507,
-      productId: 1007,
+      id: 513,
+      productId: 1013,
       productName: 'Líquido de Frenos DOT 4 Racing Formula 500ml',
       defaultCode: 'LUB-DOT4-500',
-      barcode: '7591234001077',
+      barcode: '7591234001138',
       locationId: 101,
       locationName: 'FV/Almacén Principal/Existencias',
       categId: 201,

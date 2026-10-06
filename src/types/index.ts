@@ -68,7 +68,9 @@ export interface AuditSession {
   locationName: string;
   locationId?: number;
   categoryId?: number;
+  categoryIds?: number[];
   categoryName?: string;
+  categoryNames?: string[];
   startedAt?: string;
 }
 

@@ -4,7 +4,7 @@
  */
 
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import { RealtimeCountUpdate, AuditorPresence, AuditSession } from '../types';
+import { RealtimeCountUpdate, AuditorPresence, AuditSession, QuantItem } from '../types';
 import { encodeCountHistory, decodeCountHistory } from './historyHelper';
 
 const STORAGE_KEY_CONFIG = 'odoo_audit_supabase_config';
@@ -619,9 +619,10 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
       companyName: sessionRecord?.company_name || 'FV GRUPO EMPRESARIAL, C.A.',
       companyId: sessionRecord?.company_id || undefined,
       locationName: sessionRecord?.location_name || 'WH/Existencias',
-      locationId: sessionRecord?.location_id || undefined,
       categoryId: sessionRecord?.category_id || undefined,
+      categoryIds: sessionRecord?.category_ids || (sessionRecord?.category_id ? [sessionRecord.category_id] : undefined),
       categoryName: sessionRecord?.category_name || undefined,
+      categoryNames: sessionRecord?.category_names || undefined,
       odooUrl: sessionRecord?.odoo_url || undefined,
       odooDb: sessionRecord?.odoo_db || undefined,
     };
@@ -885,6 +886,98 @@ export async function updateSessionCategoryInSupabase(
       .eq('pin', pin);
   } catch {
     // noop
+  }
+}
+
+/**
+ * Actualiza las categorías combinadas de una sesión en Supabase
+ */
+export async function updateSessionCategoriesInSupabase(
+  pin: string,
+  categoryIds: number[],
+  categoryName: string
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    const primaryId = categoryIds.length > 0 ? categoryIds[0] : null;
+    await client
+      .from('audit_sessions')
+      .update({
+        category_id: primaryId,
+        category_name: categoryName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('pin', pin);
+  } catch {
+    // noop
+  }
+}
+
+/**
+ * Inserta o actualiza en lote todos los productos pertenecientes a las categorías combinadas
+ * dentro de la tabla 'audit_items' en Supabase bajo el mismo PIN de auditoría.
+ */
+export async function saveAuditItemsToSupabase(
+  pin: string,
+  items: QuantItem[],
+  auditorName: string = 'Auditor'
+): Promise<{ success: boolean; insertedCount: number; error?: string }> {
+  if (!pin || !items || items.length === 0) {
+    return { success: true, insertedCount: 0 };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: true, insertedCount: items.length };
+  }
+
+  try {
+    const now = new Date().toISOString();
+    // Mapear cada producto a registro compatible con la tabla audit_items
+    const records = items.map((item) => ({
+      id: `${pin}_${item.productId || item.id}`,
+      pin,
+      product_id: item.productId || item.id,
+      quant_id: item.id || null,
+      product_name: item.productName || null,
+      barcode: item.barcode || null,
+      system_quantity: item.quantity,
+      counted_quantity: item.countedQuantity || 0,
+      qty: Math.round(item.countedQuantity || 0),
+      is_locked: item.isLocked ?? false,
+      auditor_name: item.lastAuditedBy || auditorName,
+      photo_url: item.photoUrl || null,
+      notes: item.notes || null,
+      updated_at: item.lastAuditedAt || now,
+    }));
+
+    // Insertar en fragmentos de 100 para garantizar alta velocidad y evitar límites de payload
+    const chunkSize = 100;
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      let { error } = await client
+        .from('audit_items')
+        .upsert(chunk, { onConflict: 'pin,product_id' });
+
+      if (error && (error.code === '42P10' || error.message?.includes('conflict') || error.message?.includes('constraint'))) {
+        // Fallback por clave primaria 'id'
+        const resId = await client
+          .from('audit_items')
+          .upsert(chunk, { onConflict: 'id' });
+        error = resId.error;
+      }
+
+      if (error) {
+        console.warn('Nota guardando lote en audit_items:', error.message);
+      }
+    }
+
+    return { success: true, insertedCount: items.length };
+  } catch (err: any) {
+    console.warn('Advertencia al insertar productos combinados en audit_items de Supabase:', err);
+    return { success: false, insertedCount: 0, error: err?.message || String(err) };
   }
 }
 

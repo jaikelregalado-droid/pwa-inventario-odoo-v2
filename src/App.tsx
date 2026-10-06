@@ -46,7 +46,9 @@ import {
   broadcastCountUpdate,
   getSavedSupabaseSettings,
   fetchSessionCountsFromSupabase,
-  updateSessionCategoryInSupabase
+  updateSessionCategoryInSupabase,
+  updateSessionCategoriesInSupabase,
+  saveAuditItemsToSupabase
 } from './lib/supabase';
 import { exportAuditToExcel } from './lib/exportExcel';
 import { sound } from './lib/audio';
@@ -280,16 +282,25 @@ export default function App() {
     }
   };
 
-  // Cargar datos de Odoo o Demo filtrados obligatoriamente por categoría sin truncar a 500
+  // Cargar datos de Odoo o Demo filtrados obligatoriamente por categorías sin truncar a 500
   // y recuperar el estado actual de conteos desde Supabase (SELECT)
   const loadInventoryData = async (
     cfg: OdooConnectionConfig,
     locId?: number,
     isDemo = false,
-    catId?: number,
+    catId?: number | number[],
     cachedCounts?: RealtimeCountUpdate[]
   ) => {
-    const targetCatId = catId !== undefined ? catId : session?.categoryId;
+    const targetCatIds: number[] = Array.isArray(catId)
+      ? catId
+      : (typeof catId === 'number' && catId > 0
+          ? [catId]
+          : (session?.categoryIds && session.categoryIds.length > 0
+              ? session.categoryIds
+              : (session?.categoryId ? [session.categoryId] : [])));
+
+    // REQUISITO 1: Restablecer filtro de categoría a 'all' (Todas las Categorías) por defecto
+    setSelectedCategoryFilter('all');
     setItems([]); // Limpiar la lista anterior obligatoriamente
     setIsLoadingItems(true);
     setLoadError(null);
@@ -328,8 +339,8 @@ export default function App() {
 
     if (isDemo) {
       const demo = getDemoFVGrupoData();
-      let filteredQuants = targetCatId
-        ? demo.quants.filter((q) => q.categId === targetCatId)
+      let filteredQuants = targetCatIds.length > 0
+        ? demo.quants.filter((q) => q.categId && targetCatIds.includes(q.categId))
         : demo.quants;
 
       // Sincronizar conteos guardados en Supabase o pasados inicialmente
@@ -375,6 +386,14 @@ export default function App() {
 
       setItems(filteredQuants);
       setCategories(demo.categories);
+      if (activePin && filteredQuants.length > 0) {
+        try {
+          await saveAuditItemsToSupabase(activePin, filteredQuants, session?.auditorName);
+        } catch (saveErr) {
+          console.warn('Aviso guardando lote demo en audit_items de Supabase:', saveErr);
+        }
+        saveOfflineCatalog(activePin, filteredQuants);
+      }
       setIsLoadingItems(false);
       return;
     }
@@ -384,8 +403,8 @@ export default function App() {
         await ensureAuthenticatedUid(cfg);
       }
 
-      // Consulta de 100% de productos filtrados por categ_id sin truncar a 500
-      const quantsData = await fetchQuants(cfg, locId, targetCatId);
+      // Consulta de 100% de productos filtrados por categ_id con operador 'in' sin truncar a 500
+      const quantsData = await fetchQuants(cfg, locId, targetCatIds);
 
       // Si habían productos inmovilizados (is_locked) en la sesión actual, proteger su QS
       if (items.length > 0) {
@@ -444,6 +463,18 @@ export default function App() {
 
       setItems(quantsData);
 
+      // REQUISITO: Carga e inserta automáticamente todos los productos pertenecientes a esas categorías combinadas
+      // dentro de la tabla 'audit_items' en Supabase bajo el mismo PIN de auditoría.
+      if (activePin && quantsData.length > 0) {
+        try {
+          await saveAuditItemsToSupabase(activePin, quantsData, session?.auditorName);
+        } catch (saveErr) {
+          console.warn('Aviso guardando lote de productos en audit_items de Supabase:', saveErr);
+        }
+        // Persistir en almacenamiento local para modo offline
+        saveOfflineCatalog(activePin, quantsData);
+      }
+
       if (quantsData.length === 0) {
         setLoadError(
           'Odoo retornó 0 productos para la categoría seleccionada en esta ubicación.'
@@ -476,7 +507,9 @@ export default function App() {
     cfg = odooConfig,
     locId = session?.locationId,
     demo = isDemoMode,
-    catId = session?.categoryId
+    catId: number | number[] | undefined = (session?.categoryIds && session.categoryIds.length > 0)
+      ? session.categoryIds
+      : session?.categoryId
   ) => {
     if (!cfg) return;
     return loadInventoryData(cfg, locId, demo, catId);
@@ -485,30 +518,65 @@ export default function App() {
   // Efecto para verificar si se requiere selección de categoría o recargar al cambiar ubicación/categoría
   useEffect(() => {
     if (session && odooConfig) {
-      if (!session.categoryId) {
+      const hasCategories = Boolean(
+        (session.categoryIds && session.categoryIds.length > 0) || session.categoryId
+      );
+      if (!hasCategories) {
         // Flujo obligatorio: abrir modal y NO cargar productos generales
         loadCategoriesOnly(odooConfig, isDemoMode);
         setIsCategoryModalOpen(true);
       } else {
-        loadInventoryData(odooConfig, session.locationId, isDemoMode, session.categoryId);
+        const catFilter = session.categoryIds && session.categoryIds.length > 0
+          ? session.categoryIds
+          : session.categoryId;
+        loadInventoryData(odooConfig, session.locationId, isDemoMode, catFilter);
       }
     }
-  }, [session?.pin, session?.locationId, session?.categoryId]);
+  }, [
+    session?.pin,
+    session?.locationId,
+    session?.categoryId,
+    session?.categoryIds ? session.categoryIds.join(',') : '',
+  ]);
 
-  // Manejador de selección de categoría confirmada
-  const handleCategorySelected = (cat: OdooCategory) => {
-    if (!session || !odooConfig) return;
+  // Manejador de selección múltiple de categorías confirmada
+  const handleCategoriesSelected = async (selectedCats: OdooCategory[]) => {
+    if (!session || !odooConfig || selectedCats.length === 0) return;
+
+    const selectedCatIds = selectedCats.map((c) => c.id);
+    const combinedCategoryName = selectedCats.map((c) => c.name).join(', ');
+
+    // REQUISITO 1: Restablecer filtro de categoría a 'all' (Todas las Categorías) por defecto
+    setSelectedCategoryFilter('all');
+
     const updatedSession: AuditSession = {
       ...session,
-      categoryId: cat.id,
-      categoryName: cat.name,
+      categoryId: selectedCatIds[0],
+      categoryIds: selectedCatIds,
+      categoryName: combinedCategoryName,
+      categoryNames: selectedCats.map((c) => c.name),
     };
+
     setSession(updatedSession);
     setIsCategoryModalOpen(false);
     sound.playSuccess();
-    // Actualizar categoría en Supabase para sincronizar a otros auditores
-    updateSessionCategoryInSupabase(updatedSession.pin, cat.id, cat.name);
-    loadInventoryData(odooConfig, updatedSession.locationId, isDemoMode, cat.id);
+
+    // Actualizar categorías en Supabase para sincronizar a otros auditores
+    updateSessionCategoriesInSupabase(updatedSession.pin, selectedCatIds, combinedCategoryName);
+
+    // Cargar e insertar automáticamente todos los productos pertenecientes a esas categorías
+    await loadInventoryData(odooConfig, updatedSession.locationId, isDemoMode, selectedCatIds);
+
+    setScannerAlert({
+      message: `✓ Categorías asignadas: ${combinedCategoryName}`,
+      type: 'success',
+      id: Date.now(),
+    });
+  };
+
+  // Manejador de selección de categoría única (compatibilidad)
+  const handleCategorySelected = (cat: OdooCategory) => {
+    handleCategoriesSelected([cat]);
   };
 
   // Manejador para cerrar o saltar la selección obligatoria de categoría
@@ -943,21 +1011,52 @@ export default function App() {
     localStorage.removeItem(STORAGE_SESSION_KEY);
   };
 
-  // Categorías deduplicadas para los botones de filtrado
-  const deduplicatedCategories = useMemo(() => {
-    const seenNames = new Set<string>();
-    const seenIds = new Set<number>();
-    const list: OdooCategory[] = [];
-    for (const cat of categories) {
-      if (!cat || typeof cat.id !== 'number') continue;
-      const key = (cat.complete_name || cat.name || '').trim().toLowerCase();
-      if (seenIds.has(cat.id) || (key && seenNames.has(key))) continue;
-      seenIds.add(cat.id);
-      if (key) seenNames.add(key);
-      list.push(cat);
+  // 3. BARRA DE PESTAÑAS DINÁMICA: Pestaña individual por cada categoría seleccionada en el modal
+  const dynamicCategoryTabs = useMemo(() => {
+    // Resolver nombres de categorías desde catálogo cargado y desde items
+    const catMap = new Map<number, string>();
+    for (const c of categories) {
+      if (c && typeof c.id === 'number') {
+        catMap.set(c.id, c.name || c.complete_name || `Categoría #${c.id}`);
+      }
     }
-    return list;
-  }, [categories]);
+    for (const it of items) {
+      if (it.categId && it.categName && !catMap.has(it.categId)) {
+        catMap.set(it.categId, it.categName);
+      }
+    }
+
+    // IDs seleccionados en la sesión activa
+    const selectedIds = session?.categoryIds && session.categoryIds.length > 0
+      ? session.categoryIds
+      : (session?.categoryId ? [session.categoryId] : []);
+
+    if (selectedIds.length > 0) {
+      return selectedIds.map((id) => {
+        const rawName = catMap.get(id) || `Categoría #${id}`;
+        const displayName = rawName.includes('/') ? rawName.split('/').pop()?.trim() || rawName : rawName;
+        return {
+          id,
+          name: displayName,
+          fullName: rawName,
+          count: items.filter((i) => Number(i.categId) === Number(id)).length,
+        };
+      });
+    }
+
+    // Fallback: Si no hay IDs explícitos en la sesión, deducir de los items cargados
+    const uniqueIds = Array.from(new Set(items.map((i) => i.categId).filter((id): id is number => typeof id === 'number')));
+    return uniqueIds.map((id) => {
+      const rawName = catMap.get(id) || `Categoría #${id}`;
+      const displayName = rawName.includes('/') ? rawName.split('/').pop()?.trim() || rawName : rawName;
+      return {
+        id,
+        name: displayName,
+        fullName: rawName,
+        count: items.filter((i) => Number(i.categId) === Number(id)).length,
+      };
+    });
+  }, [session?.categoryIds, session?.categoryId, categories, items]);
 
   // Filtros aplicados a los productos
   const filteredItems = useMemo(() => {
@@ -972,9 +1071,11 @@ export default function App() {
         if (!matches) return false;
       }
 
-      // Filtro por categoría
+      // Filtro por categoría: 'all' muestra la totalidad de productos de las categorías seleccionadas
       if (selectedCategoryFilter !== 'all') {
-        if (item.categId !== selectedCategoryFilter) return false;
+        const itemCatId = item.categId !== undefined ? Number(item.categId) : null;
+        const targetCatId = Number(selectedCategoryFilter);
+        if (itemCatId !== targetCatId) return false;
       }
 
       // Filtro por discrepancia
@@ -1011,10 +1112,14 @@ export default function App() {
 
             setItems([]); // Limpiar la lista anterior explícitamente
 
-            // Si la sesión ya tiene categoría configurada en Supabase (ej. creada previamente por el Lead)
+            // Si la sesión ya tiene categorías configuradas en Supabase (ej. creada previamente por el Lead)
             // cargar directamente el inventario con los conteos de otros auditores
-            if (newSession.categoryId) {
-              loadInventoryData(config, newSession.locationId, isDemo, newSession.categoryId, initialCounts);
+            const sessionCat = (newSession.categoryIds && newSession.categoryIds.length > 0)
+              ? newSession.categoryIds
+              : newSession.categoryId;
+
+            if (sessionCat) {
+              loadInventoryData(config, newSession.locationId, isDemo, sessionCat, initialCounts);
             } else {
               // Si aún no tiene categoría, abrir el modal obligatorio de selección
               loadCategoriesOnly(config, isDemo);
@@ -1093,9 +1198,13 @@ export default function App() {
               <FolderKanban className="w-4 h-4" />
             </div>
             <div className="min-w-0 truncate">
-              <span className="text-[11px] text-slate-400 block font-medium">Área de Auditoría Asignada:</span>
-              <strong className="text-white text-xs sm:text-sm font-bold truncate block">
-                {session.categoryName || 'Selecciona una categoría para comenzar'}
+              <span className="text-[11px] text-slate-400 block font-medium">
+                {session.categoryIds && session.categoryIds.length > 1
+                  ? `Áreas de Auditoría (${session.categoryIds.length} Categorías combinadas):`
+                  : 'Área de Auditoría Asignada:'}
+              </span>
+              <strong className="text-white text-xs sm:text-sm font-bold truncate block" title={session.categoryName}>
+                {session.categoryName || 'Selecciona una o más categorías para comenzar'}
               </strong>
             </div>
           </div>
@@ -1223,33 +1332,55 @@ export default function App() {
           </div>
         </div>
 
-        {/* Filtro por Categorías de Producto si hay varias */}
-        {deduplicatedCategories.length > 0 && (
+        {/* 3. BARRA DE PESTAÑAS DINÁMICA: "Todas las Categorías" + pestaña individual por cada categoría seleccionada en el modal */}
+        {dynamicCategoryTabs.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
+            {/* Pestaña: "Todas las Categorías (N)" donde N es la suma exacta de todos los productos */}
             <button
+              type="button"
               onClick={() => setSelectedCategoryFilter('all')}
-              className={`px-3 py-1.5 rounded-xl font-medium shrink-0 transition cursor-pointer border ${
+              className={`px-3.5 py-1.5 rounded-xl font-bold shrink-0 transition cursor-pointer border flex items-center gap-1.5 shadow-sm ${
                 selectedCategoryFilter === 'all'
-                  ? 'bg-indigo-600 text-white border-indigo-500'
-                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-950/60'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
               }`}
             >
-              Todas las Categorías ({items.length})
+              <span>Todas las Categorías</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  selectedCategoryFilter === 'all'
+                    ? 'bg-indigo-500/80 text-white'
+                    : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {items.length}
+              </span>
             </button>
-            {deduplicatedCategories.map((cat) => {
-              const countInCat = items.filter((i) => i.categId === cat.id).length;
-              if (countInCat === 0) return null;
+
+            {/* Pestaña individual por cada categoría seleccionada en el modal */}
+            {dynamicCategoryTabs.map((tab) => {
+              const isTabActive = selectedCategoryFilter === tab.id;
               return (
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategoryFilter(cat.id)}
-                  className={`px-3 py-1.5 rounded-xl font-medium shrink-0 transition cursor-pointer border ${
-                    selectedCategoryFilter === cat.id
-                      ? 'bg-indigo-600 text-white border-indigo-500'
-                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedCategoryFilter(tab.id)}
+                  className={`px-3.5 py-1.5 rounded-xl font-medium shrink-0 transition cursor-pointer border flex items-center gap-1.5 shadow-sm ${
+                    isTabActive
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-950/60 font-bold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
                   }`}
                 >
-                  {cat.name} ({countInCat})
+                  <span>{tab.name}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      isTabActive
+                        ? 'bg-indigo-500/80 text-white'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
                 </button>
               );
             })}
@@ -1406,7 +1537,7 @@ export default function App() {
         />
       )}
 
-      {/* Modal Obligatorio de Selección de Categoría */}
+      {/* Modal Obligatorio de Selección de Categoría (Multiselect) */}
       <CategorySelectionModal
         isOpen={isCategoryModalOpen}
         categories={categories}
@@ -1415,8 +1546,10 @@ export default function App() {
         auditorName={session.auditorName}
         sessionPin={session.pin}
         locationName={session.locationName}
+        currentCategoryId={session.categoryId}
+        currentCategoryIds={session.categoryIds}
         canClose={true}
-        onSelectCategory={handleCategorySelected}
+        onSelectCategories={handleCategoriesSelected}
         onClose={handleCategoryModalClose}
         onRetryLoadCategories={() => loadCategoriesOnly(odooConfig, isDemoMode)}
         onOpenCustomInventory={() => {

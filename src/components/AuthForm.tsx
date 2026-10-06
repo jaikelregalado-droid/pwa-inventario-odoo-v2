@@ -426,9 +426,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           companyName: checkResult.session?.companyName || 'FV GRUPO EMPRESARIAL, C.A.',
           companyId: checkResult.session?.companyId || selectedCompanyId || 1,
           locationName: checkResult.session?.locationName || 'WH/Existencias',
-          locationId: checkResult.session?.locationId || selectedLocationId,
           categoryId: checkResult.session?.categoryId,
+          categoryIds: checkResult.session?.categoryIds || (checkResult.session?.categoryId ? [checkResult.session.categoryId] : undefined),
           categoryName: checkResult.session?.categoryName,
+          categoryNames: checkResult.session?.categoryNames,
         };
 
         const effectiveProxy = isCustomProxy ? (customProxyUrl.trim() || 'direct') : proxyUrl;
