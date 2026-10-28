@@ -35,24 +35,24 @@ export const ProductOtherLocationModal: React.FC<ProductOtherLocationModalProps>
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in"
       onClick={onClose}
     >
       <div
-        className="relative max-w-lg w-full bg-[#1E293B] border-2 border-amber-500/60 rounded-3xl shadow-2xl p-5 text-[#F8FAFC] overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative max-w-lg w-full bg-white border-2 border-amber-400 rounded-3xl shadow-2xl p-5 text-[#0F172A] overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera de Alerta */}
-        <div className="flex items-start justify-between pb-3.5 border-b border-[#334155]">
+        <div className="flex items-start justify-between pb-3.5 border-b border-[#E2E8F0]">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400">
+            <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600">
               <AlertTriangle className="w-6 h-6 animate-pulse" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-[#F8FAFC]">
+              <h3 className="text-base font-extrabold text-[#0F172A]">
                 Producto en Otra Ubicación / Dpto.
               </h3>
-              <p className="text-xs text-amber-300 font-medium">
+              <p className="text-xs text-amber-600 font-semibold">
                 Detectado en el catálogo global de Odoo
               </p>
             </div>
@@ -61,7 +61,7 @@ export const ProductOtherLocationModal: React.FC<ProductOtherLocationModalProps>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] transition cursor-pointer"
+            className="p-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -70,38 +70,38 @@ export const ProductOtherLocationModal: React.FC<ProductOtherLocationModalProps>
         {/* Cuerpo del modal con scroll */}
         <div className="flex-1 overflow-y-auto py-3.5 space-y-3.5 text-xs">
           {/* Ficha del Producto */}
-          <div className="p-3.5 rounded-2xl bg-[#0F172A] border border-[#334155] space-y-1.5">
+          <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-950/80 border border-[#2563EB]/40 text-blue-300 font-mono text-[10px] font-bold">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-[#7C3AED] font-mono text-[10px] font-bold">
                 <Package className="w-3 h-3" />
                 ID #{product.id}
               </span>
               {product.defaultCode && (
-                <span className="px-2 py-0.5 rounded-md bg-[#1E293B] border border-[#334155] text-[#94A3B8] font-mono text-[10px]">
+                <span className="px-2 py-0.5 rounded-md bg-white border border-[#E2E8F0] text-[#64748B] font-mono text-[10px]">
                   Ref: {product.defaultCode}
                 </span>
               )}
               {product.barcode && (
-                <span className="px-2 py-0.5 rounded-md bg-[#1E293B] border border-[#334155] text-[#94A3B8] font-mono text-[10px]">
+                <span className="px-2 py-0.5 rounded-md bg-white border border-[#E2E8F0] text-[#64748B] font-mono text-[10px]">
                   EAN: {product.barcode}
                 </span>
               )}
               {product.categName && (
-                <span className="px-2 py-0.5 rounded-md bg-blue-950/40 border border-[#2563EB]/30 text-blue-300 text-[10px]">
+                <span className="px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-[#7C3AED] text-[10px] font-semibold">
                   {product.categName}
                 </span>
               )}
             </div>
 
-            <h4 className="text-sm font-black text-[#F8FAFC] leading-snug">
+            <h4 className="text-sm font-black text-[#0F172A] leading-snug">
               {product.name}
             </h4>
           </div>
 
           {/* Ubicaciones donde existe actualmente en Odoo */}
           <div className="space-y-1.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-amber-500" />
               Ubicaciones Asignadas en Odoo:
             </span>
 
@@ -110,32 +110,32 @@ export const ProductOtherLocationModal: React.FC<ProductOtherLocationModalProps>
                 {locations.map((loc, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-[#0F172A]/80 border border-[#334155] text-xs"
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs shadow-2xs"
                   >
                     <div className="flex items-center gap-2 min-w-0 pr-2">
-                      <Layers className="w-4 h-4 text-slate-500 shrink-0" />
-                      <span className="font-medium text-[#F8FAFC] truncate" title={loc.locationName}>
+                      <Layers className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span className="font-medium text-[#0F172A] truncate" title={loc.locationName}>
                         {loc.locationName}
                       </span>
                     </div>
-                    <span className="font-mono font-bold text-amber-300 shrink-0">
+                    <span className="font-mono font-bold text-amber-600 shrink-0">
                       {loc.quantity} uds.
                     </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="p-3 rounded-xl bg-[#0F172A]/60 border border-[#334155] text-[#94A3B8] text-center">
+              <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B] text-center">
                 El producto está registrado en Odoo pero no tiene existencias fijas asignadas en esta sede.
               </div>
             )}
           </div>
 
           {/* Nota de Auditoría */}
-          <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs space-y-1">
-            <span className="font-bold block">Auditoría en Curso:</span>
-            <p className="text-amber-300/90 leading-relaxed text-[11px]">
-              Tu sesión actual está asignada a la ubicación <strong className="text-white">{currentLocationName}</strong>
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+            <span className="font-bold block text-amber-800">Auditoría en Curso:</span>
+            <p className="text-amber-800/90 leading-relaxed text-[11px]">
+              Tu sesión actual está asignada a la ubicación <strong className="text-amber-950 font-bold">{currentLocationName}</strong>
               {currentCategoryName ? ` y departamento ${currentCategoryName}` : ''}.
               Si este producto se encuentra físicamente aquí, puedes vincularlo excepcionalmente para contarlo en esta auditoría.
             </p>
@@ -143,11 +143,11 @@ export const ProductOtherLocationModal: React.FC<ProductOtherLocationModalProps>
         </div>
 
         {/* Botones de Acción */}
-        <div className="pt-3 border-t border-[#334155] flex items-center gap-2">
+        <div className="pt-3 border-t border-[#E2E8F0] flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-3 px-4 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] font-bold text-xs transition cursor-pointer text-center"
+            className="flex-1 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#64748B] hover:text-[#0F172A] border border-[#CBD5E1] font-bold text-xs transition cursor-pointer text-center"
           >
             Cancelar / Ignorar
           </button>
@@ -155,7 +155,7 @@ export const ProductOtherLocationModal: React.FC<ProductOtherLocationModalProps>
           <button
             type="button"
             onClick={onLinkToCurrentAudit}
-            className="flex-2 py-3 px-4 rounded-xl bg-[#2563EB] hover:bg-blue-500 active:scale-95 text-white font-black text-xs sm:text-sm shadow-xl shadow-blue-950 transition cursor-pointer flex items-center justify-center gap-2"
+            className="flex-2 py-3 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] active:scale-95 text-white font-black text-xs sm:text-sm shadow-md transition cursor-pointer flex items-center justify-center gap-2"
           >
             <Plus className="w-4 h-4" />
             <span>Vincular al Conteo Actual</span>

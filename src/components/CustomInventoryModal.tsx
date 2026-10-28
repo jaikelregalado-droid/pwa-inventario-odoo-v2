@@ -213,24 +213,24 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in"
       onClick={onClose}
     >
       <div
-        className="relative max-w-2xl w-full max-h-[90vh] bg-[#1E293B] border border-[#334155] rounded-3xl shadow-2xl flex flex-col overflow-hidden text-[#F8FAFC]"
+        className="relative max-w-2xl w-full max-h-[90vh] bg-white border border-[#E2E8F0] rounded-3xl shadow-2xl flex flex-col overflow-hidden text-[#0F172A]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera del Modal */}
-        <div className="shrink-0 px-4 py-3.5 sm:px-6 sm:py-4 border-b border-[#334155] bg-[#1E293B] flex items-start justify-between gap-3">
+        <div className="shrink-0 px-4 py-3.5 sm:px-6 sm:py-4 border-b border-[#E2E8F0] bg-white flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-blue-950/60 border border-[#2563EB]/40 text-blue-400 shrink-0">
+            <div className="p-2.5 rounded-2xl bg-purple-50 border border-purple-200 text-[#7C3AED] shrink-0">
               <Boxes className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-[#F8FAFC] leading-tight">
+              <h3 className="text-base sm:text-lg font-bold text-[#0F172A] leading-tight">
                 Crear Inventario Personalizado
               </h3>
-              <p className="text-xs text-[#94A3B8]">
+              <p className="text-xs text-[#64748B]">
                 Selecciona productos de diferentes departamentos y almacenes para un conteo a medida
               </p>
             </div>
@@ -239,14 +239,14 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] cursor-pointer transition shrink-0"
+            className="p-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] cursor-pointer transition shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Barra de Búsqueda y Filtros */}
-        <div className="p-4 sm:p-5 border-b border-[#334155] bg-[#0F172A]/80 space-y-3">
+        <div className="p-4 sm:p-5 border-b border-[#E2E8F0] bg-[#F8FAFC] space-y-3">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -261,13 +261,13 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar por nombre, código de barras o ref. interna..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/25 text-xs sm:text-sm text-[#F8FAFC] placeholder-[#94A3B8] outline-none"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 text-xs sm:text-sm text-[#0F172A] placeholder-[#94A3B8] outline-none shadow-xs"
               />
             </div>
             <button
               type="submit"
               disabled={isSearching}
-              className="px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-blue-500 text-white font-bold text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 shrink-0"
+              className="px-4 py-2.5 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold text-xs shadow-sm transition cursor-pointer flex items-center gap-1.5 shrink-0 active:scale-95"
             >
               {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
               <span>Buscar</span>
@@ -281,17 +281,17 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
                 type="button"
                 onClick={handleSelectAllVisible}
                 disabled={searchResults.length === 0}
-                className="flex items-center gap-1 text-[#94A3B8] hover:text-[#F8FAFC] text-[11px] disabled:opacity-40 cursor-pointer"
+                className="flex items-center gap-1 text-[#64748B] hover:text-[#0F172A] text-[11px] font-medium disabled:opacity-40 cursor-pointer"
               >
-                <CheckSquare className="w-3.5 h-3.5 text-blue-400" />
+                <CheckSquare className="w-3.5 h-3.5 text-[#7C3AED]" />
                 <span>Marcar visibles ({searchResults.length})</span>
               </button>
-              <span className="text-slate-600">•</span>
+              <span className="text-slate-300">•</span>
               <button
                 type="button"
                 onClick={handleDeselectAllVisible}
                 disabled={selectedItems.size === 0}
-                className="flex items-center gap-1 text-[#94A3B8] hover:text-[#F8FAFC] text-[11px] disabled:opacity-40 cursor-pointer"
+                className="flex items-center gap-1 text-[#64748B] hover:text-[#0F172A] text-[11px] font-medium disabled:opacity-40 cursor-pointer"
               >
                 <Square className="w-3.5 h-3.5 text-[#94A3B8]" />
                 <span>Desmarcar visibles</span>
@@ -299,27 +299,27 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
             </div>
 
             {/* Contador en Tiempo Real */}
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-[#2563EB]/50 text-blue-300 font-bold text-xs shadow-inner">
-              <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-[#7C3AED] font-bold text-xs">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#7C3AED] animate-pulse"></span>
               <span>{selectedItems.size} productos seleccionados</span>
             </div>
           </div>
         </div>
 
         {/* Lista de Resultados con Checkbox */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2.5 min-h-[220px]">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2.5 min-h-[220px] bg-slate-50/50">
           {isSearching && (
-            <div className="py-12 text-center text-[#94A3B8] space-y-2">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-400" />
+            <div className="py-12 text-center text-[#64748B] space-y-2">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#7C3AED]" />
               <p className="text-xs">Consultando catálogo global de Odoo 17...</p>
             </div>
           )}
 
           {!isSearching && searchResults.length === 0 && (
-            <div className="py-12 text-center text-[#94A3B8] space-y-2">
-              <Boxes className="w-10 h-10 mx-auto text-slate-600" />
-              <p className="text-sm font-semibold text-[#F8FAFC]">No se encontraron productos con ese criterio</p>
-              <p className="text-xs text-[#94A3B8]">Prueba buscando otro término o deja el campo vacío para ver todos.</p>
+            <div className="py-12 text-center text-[#64748B] space-y-2">
+              <Boxes className="w-10 h-10 mx-auto text-slate-400" />
+              <p className="text-sm font-semibold text-[#0F172A]">No se encontraron productos con ese criterio</p>
+              <p className="text-xs text-[#64748B]">Prueba buscando otro término o deja el campo vacío para ver todos.</p>
             </div>
           )}
 
@@ -329,37 +329,37 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
               <div
                 key={item.id}
                 onClick={() => toggleSelectItem(item)}
-                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 shadow-xs ${
                   isChecked
-                    ? 'bg-blue-950/50 border-2 border-[#2563EB] shadow-md shadow-blue-950/50 text-[#F8FAFC]'
-                    : 'bg-[#0F172A]/60 border border-[#334155] hover:border-slate-500 text-[#94A3B8]'
+                    ? 'bg-purple-50/70 border-2 border-[#7C3AED] text-[#0F172A]'
+                    : 'bg-white border-[#E2E8F0] hover:border-slate-300 text-[#0F172A]'
                 }`}
               >
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="mt-0.5 shrink-0">
                     {isChecked ? (
-                      <CheckSquare className="w-5 h-5 text-blue-400 fill-blue-400/20" />
+                      <CheckSquare className="w-5 h-5 text-[#7C3AED]" />
                     ) : (
-                      <Square className="w-5 h-5 text-slate-500" />
+                      <Square className="w-5 h-5 text-slate-300" />
                     )}
                   </div>
                   <div className="min-w-0 space-y-1">
-                    <h4 className="text-xs sm:text-sm font-bold truncate leading-tight text-[#F8FAFC]">
+                    <h4 className="text-xs sm:text-sm font-bold truncate leading-tight text-[#0F172A]">
                       {item.productName}
                     </h4>
-                    <div className="flex items-center gap-2 flex-wrap text-[10px] text-[#94A3B8] font-mono">
+                    <div className="flex items-center gap-2 flex-wrap text-[10px] text-[#64748B] font-mono">
                       {item.defaultCode && (
-                        <span className="bg-[#0F172A] px-1.5 py-0.5 rounded border border-[#334155]">
+                        <span className="bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0]">
                           Ref: {item.defaultCode}
                         </span>
                       )}
                       {item.barcode && (
-                        <span className="bg-[#0F172A] px-1.5 py-0.5 rounded border border-[#334155]">
+                        <span className="bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0]">
                           EAN: {item.barcode}
                         </span>
                       )}
                       {item.categName && (
-                        <span className="bg-blue-950/80 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800/40">
+                        <span className="bg-purple-50 text-[#7C3AED] px-1.5 py-0.5 rounded border border-purple-200">
                           {item.categName}
                         </span>
                       )}
@@ -368,8 +368,8 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
                 </div>
 
                 <div className="text-right shrink-0">
-                  <span className="text-[10px] text-[#94A3B8] block font-medium">QS (Sistema)</span>
-                  <span className="text-xs sm:text-sm font-bold font-mono text-[#F8FAFC]">
+                  <span className="text-[10px] text-[#64748B] block font-medium">QS (Sistema)</span>
+                  <span className="text-xs sm:text-sm font-bold font-mono text-[#0F172A]">
                     {item.quantity} uds.
                   </span>
                 </div>
@@ -380,12 +380,12 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
 
         {/* Panel Resumen de Selección (Píldoras Removibles) */}
         {selectedItems.size > 0 && (
-          <div className="px-4 py-2.5 bg-[#0F172A] border-t border-[#334155] flex items-center gap-2 overflow-x-auto text-xs shrink-0 scrollbar-none">
-            <span className="text-[11px] text-blue-300 font-bold shrink-0">Seleccionados:</span>
+          <div className="px-4 py-2.5 bg-[#F8FAFC] border-t border-[#E2E8F0] flex items-center gap-2 overflow-x-auto text-xs shrink-0 scrollbar-none">
+            <span className="text-[11px] text-[#7C3AED] font-bold shrink-0">Seleccionados:</span>
             {Array.from(selectedItems.values()).map((it) => (
               <span
                 key={it.id}
-                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-950/80 border border-[#2563EB]/40 text-[#F8FAFC] text-[11px] truncate max-w-[180px] shrink-0"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-[#7C3AED] text-[11px] font-medium truncate max-w-[180px] shrink-0 shadow-2xs"
               >
                 <span className="truncate">{it.productName}</span>
                 <button
@@ -394,7 +394,7 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
                     e.stopPropagation();
                     handleRemoveSelectedItem(it.id);
                   }}
-                  className="hover:text-red-400 cursor-pointer"
+                  className="hover:text-red-500 cursor-pointer text-[#64748B]"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -405,16 +405,16 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
 
         {/* Mensaje de Error si ocurre */}
         {errorMessage && (
-          <div className="mx-4 mt-2 p-2.5 rounded-xl bg-rose-950/80 border border-rose-600/50 text-rose-200 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div className="mx-4 mt-2 p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
         {/* Pie de Página: Nombre del Auditor y Botón de Inicio */}
-        <div className="shrink-0 p-4 sm:p-5 border-t border-[#334155] bg-[#0F172A]/90 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="shrink-0 p-4 sm:p-5 border-t border-[#E2E8F0] bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="w-full sm:w-auto flex-1 max-w-xs space-y-1">
-            <label className="text-[10px] text-[#94A3B8] font-semibold block">
+            <label className="text-[10px] text-[#64748B] font-semibold block uppercase tracking-wider">
               Auditor Asignado:
             </label>
             <input
@@ -422,7 +422,7 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
               value={auditorName}
               onChange={(e) => setAuditorName(e.target.value)}
               placeholder="Nombre del auditor..."
-              className="w-full px-3 py-1.5 rounded-xl bg-[#0F172A] border border-[#334155] text-xs text-[#F8FAFC] placeholder-[#94A3B8] outline-none focus:border-[#2563EB]"
+              className="w-full px-3 py-2 rounded-xl bg-white border border-[#CBD5E1] text-xs text-[#0F172A] placeholder-[#94A3B8] outline-none focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED]/20 shadow-xs"
             />
           </div>
 
@@ -430,7 +430,7 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
             type="button"
             onClick={handleStartAudit}
             disabled={selectedItems.size === 0 || isSubmitting}
-            className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-[#2563EB] hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm shadow-xl shadow-blue-950 transition active:scale-95 cursor-pointer"
+            className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm shadow-md transition active:scale-95 cursor-pointer"
           >
             {isSubmitting ? (
               <>

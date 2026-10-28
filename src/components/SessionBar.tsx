@@ -61,33 +61,33 @@ export const SessionBar: React.FC<SessionBarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-[#1E293B]/95 backdrop-blur-md border-b border-[#334155] shadow-md">
+    <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
       <div className="max-w-5xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
         {/* Lado izquierdo: PIN y Compañía */}
         <div className="flex items-center gap-2 min-w-0">
           {/* Badge del PIN con botón de copia rápido */}
           <button
             onClick={handleCopyPin}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-950/80 hover:bg-blue-900/80 border border-[#2563EB]/50 text-[#F8FAFC] transition active:scale-95 cursor-pointer shadow-sm shadow-blue-950"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#7C3AED]/10 hover:bg-[#7C3AED]/15 border border-[#7C3AED]/30 text-[#7C3AED] transition active:scale-95 cursor-pointer shadow-sm"
             title="Toca para copiar el PIN de la sesión"
           >
-            <Radio className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
-            <span className="text-[10px] uppercase font-bold tracking-wider text-blue-300">PIN:</span>
-            <span className="font-mono text-sm font-black text-[#F8FAFC] tracking-widest">{session.pin}</span>
+            <Radio className="w-3.5 h-3.5 text-[#7C3AED] animate-pulse" />
+            <span className="text-[10px] uppercase font-bold tracking-wider text-[#7C3AED]">PIN:</span>
+            <span className="font-mono text-sm font-black text-[#7C3AED] tracking-widest">{session.pin}</span>
             {copied ? (
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
             ) : (
-              <Copy className="w-3.5 h-3.5 text-blue-300/70" />
+              <Copy className="w-3.5 h-3.5 text-[#7C3AED]/70" />
             )}
           </button>
 
           {/* Información de Compañía y Auditor */}
           <div className="hidden sm:block truncate">
-            <div className="text-xs font-bold text-[#F8FAFC] truncate">
+            <div className="text-xs font-bold text-[#0F172A] truncate">
               {session.companyName}
             </div>
-            <div className="text-[10px] text-[#94A3B8] truncate flex items-center gap-1">
-              <span>Auditor: <strong className="text-[#F8FAFC] font-semibold">{session.auditorName}</strong></span>
+            <div className="text-[10px] text-[#64748B] truncate flex items-center gap-1">
+              <span>Auditor: <strong className="text-[#0F172A] font-semibold">{session.auditorName}</strong></span>
               {session.locationName && (
                 <>
                   <span>•</span>
@@ -103,20 +103,20 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           {/* Etiqueta visual de Modo Offline o botón de pendientes */}
           {!isOnline ? (
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-300 text-[11px] font-bold shadow-sm animate-pulse"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-bold shadow-sm animate-pulse"
               title="Sin conexión a internet. Los cambios se guardan localmente."
             >
-              <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+              <WifiOff className="w-3.5 h-3.5 text-amber-600" />
               <span>Modo Offline{pendingSyncCount > 0 ? ` (${pendingSyncCount})` : ''}</span>
             </div>
           ) : pendingSyncCount > 0 ? (
             <button
               type="button"
               onClick={onTriggerPendingSync}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-950/80 hover:bg-blue-900/80 border border-[#2563EB]/50 text-blue-300 text-[11px] font-bold shadow-sm cursor-pointer transition active:scale-95"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-[#7C3AED]/40 text-[#7C3AED] text-[11px] font-bold shadow-sm cursor-pointer transition active:scale-95"
               title="Hay conteos pendientes de enviar a Supabase. Toca para sincronizar."
             >
-              <Radio className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+              <Radio className="w-3.5 h-3.5 text-[#7C3AED] animate-spin" />
               <span>Sincronizar ({pendingSyncCount})</span>
             </button>
           ) : null}
@@ -124,23 +124,23 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           {/* Indicador de Estado WebSocket / Supabase */}
           <button
             onClick={onOpenSyncModal}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-medium transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-medium transition cursor-pointer shadow-sm ${
               connectionStatus === 'connected'
-                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:bg-emerald-950/60'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/70'
                 : connectionStatus === 'connecting'
-                ? 'bg-amber-950/40 border-amber-500/30 text-amber-300 animate-pulse'
+                ? 'bg-amber-50 border-amber-200 text-amber-700 animate-pulse'
                 : connectionStatus === 'local_only'
-                ? 'bg-blue-950/40 border-blue-500/30 text-blue-300 hover:bg-blue-950/60'
-                : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                ? 'bg-purple-50 border-purple-200 text-[#7C3AED] hover:bg-purple-100/70'
+                : 'bg-rose-50 border-rose-200 text-rose-700'
             }`}
             title="Configuración de Supabase Realtime"
           >
             {connectionStatus === 'connected' ? (
-              <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+              <Wifi className="w-3.5 h-3.5 text-emerald-600" />
             ) : connectionStatus === 'local_only' ? (
-              <Radio className="w-3.5 h-3.5 text-blue-400" />
+              <Radio className="w-3.5 h-3.5 text-[#7C3AED]" />
             ) : (
-              <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+              <WifiOff className="w-3.5 h-3.5 text-amber-600" />
             )}
             <span className="hidden xs:inline">
               {connectionStatus === 'connected'
@@ -157,27 +157,27 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowAuditorsList(!showAuditorsList)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 border border-[#334155] text-[#F8FAFC] text-xs font-semibold transition active:scale-95 cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#0F172A] text-xs font-semibold transition active:scale-95 cursor-pointer shadow-sm"
               title="Auditores conectados a este PIN"
             >
-              <Users className="w-3.5 h-3.5 text-blue-400" />
+              <Users className="w-3.5 h-3.5 text-[#7C3AED]" />
               <span>{Math.max(1, auditors.length)}</span>
             </button>
 
             {/* Popover con lista de auditores */}
             {showAuditorsList && (
               <div
-                className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#1E293B] border border-[#334155] shadow-2xl p-3 z-50 animate-in fade-in"
+                className="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-[#E2E8F0] shadow-xl p-3 z-50 animate-in fade-in"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center justify-between pb-2 border-b border-[#334155]">
-                  <span className="text-xs font-bold text-[#F8FAFC] flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-blue-400" />
+                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                  <span className="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-[#7C3AED]" />
                     Auditores en Sesión ({Math.max(1, auditors.length)})
                   </span>
                   <button
                     onClick={() => setShowAuditorsList(false)}
-                    className="text-[#94A3B8] hover:text-[#F8FAFC] text-xs p-1"
+                    className="text-[#64748B] hover:text-[#0F172A] text-xs p-1"
                   >
                     ✕
                   </button>
@@ -186,17 +186,17 @@ export const SessionBar: React.FC<SessionBarProps> = ({
                   {auditors.map((auditor) => (
                     <div
                       key={auditor.id}
-                      className="flex items-center justify-between p-2 rounded-lg bg-[#0F172A] border border-[#334155]/60 text-xs"
+                      className="flex items-center justify-between p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
                     >
                       <div className="truncate">
-                        <div className="font-semibold text-[#F8FAFC] truncate">
+                        <div className="font-semibold text-[#0F172A] truncate">
                           {auditor.name} {auditor.name === session.auditorName && '(Tú)'}
                         </div>
-                        <div className="text-[10px] text-[#94A3B8]">
+                        <div className="text-[10px] text-[#64748B]">
                           {auditor.device}
                         </div>
                       </div>
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                     </div>
                   ))}
                 </div>
@@ -207,10 +207,10 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           {/* Toggle de Sonido Web Audio */}
           <button
             onClick={toggleSound}
-            className={`p-2 rounded-xl border transition cursor-pointer ${
+            className={`p-2 rounded-xl border transition cursor-pointer shadow-sm ${
               isMuted
-                ? 'bg-[#0F172A] border-[#334155] text-slate-500 hover:text-slate-400'
-                : 'bg-[#0F172A] border-[#334155] text-blue-400 hover:text-[#F8FAFC]'
+                ? 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-400 hover:text-slate-600'
+                : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#7C3AED] hover:text-[#6D28D9]'
             }`}
             title={isMuted ? 'Activar Sonidos de Conteo' : 'Silenciar'}
           >
@@ -221,7 +221,7 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           <a
             href="/odoo-audit-app.zip"
             download="odoo-audit-app.zip"
-            className="p-2 rounded-xl bg-[#0F172A] hover:bg-blue-950/60 border border-[#334155] hover:border-[#2563EB]/50 text-[#94A3B8] hover:text-blue-300 transition cursor-pointer flex items-center justify-center"
+            className="p-2 rounded-xl bg-[#F8FAFC] hover:bg-purple-50 border border-[#E2E8F0] hover:border-[#7C3AED]/40 text-[#64748B] hover:text-[#7C3AED] transition cursor-pointer flex items-center justify-center shadow-sm"
             title="Descargar código del proyecto (.ZIP)"
             aria-label="Descargar código del proyecto"
           >
@@ -232,7 +232,7 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           <button
             type="button"
             onClick={() => setShowLogoutConfirm(true)}
-            className="p-2 rounded-xl bg-[#0F172A] hover:bg-rose-950/60 border border-[#334155] hover:border-rose-800/50 text-[#94A3B8] hover:text-rose-300 transition cursor-pointer"
+            className="p-2 rounded-xl bg-[#F8FAFC] hover:bg-rose-50 border border-[#E2E8F0] hover:border-rose-300 text-[#64748B] hover:text-rose-600 transition cursor-pointer shadow-sm"
             title="Salir de la sesión de inventario"
             aria-label="Salir de la sesión"
           >
@@ -241,27 +241,27 @@ export const SessionBar: React.FC<SessionBarProps> = ({
         </div>
       </div>
 
-      {/* Modal In-App de Confirmación de Cierre de Sesión (sin usar window.confirm bloqueado por iframe) */}
+      {/* Modal In-App de Confirmación de Cierre de Sesión */}
       {showLogoutConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in"
           onClick={() => setShowLogoutConfirm(false)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl bg-[#1E293B] border border-[#334155] p-5 shadow-2xl text-left space-y-4"
+            className="w-full max-w-sm rounded-2xl bg-white border border-[#E2E8F0] p-5 shadow-2xl text-left space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-800/50 text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600">
                 <LogOut className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-[#F8FAFC]">¿Salir de la auditoría?</h3>
-                <p className="text-xs text-[#94A3B8]">Sesión PIN: <strong className="font-mono text-blue-400">{session.pin}</strong></p>
+                <h3 className="text-sm font-bold text-[#0F172A]">¿Salir de la auditoría?</h3>
+                <p className="text-xs text-[#64748B]">Sesión PIN: <strong className="font-mono text-[#7C3AED]">{session.pin}</strong></p>
               </div>
             </div>
 
-            <p className="text-xs text-[#94A3B8] leading-relaxed">
+            <p className="text-xs text-[#64748B] leading-relaxed">
               Volverás a la pantalla principal de selección de ubicación y conexión. Los conteos ya guardados en Odoo y Supabase permanecerán seguros.
             </p>
 
@@ -269,14 +269,14 @@ export const SessionBar: React.FC<SessionBarProps> = ({
               <button
                 type="button"
                 onClick={() => setShowLogoutConfirm(false)}
-                className="px-4 py-2 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-xs font-semibold text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] transition cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 text-xs font-semibold text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] transition cursor-pointer"
               >
                 Continuar Conteo
               </button>
               <button
                 type="button"
                 onClick={handleLogoutAction}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white shadow-lg shadow-rose-950 transition cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition cursor-pointer"
               >
                 Salir de Sesión
               </button>

@@ -512,28 +512,28 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
     <div className="w-full max-w-xl mx-auto px-4 py-6 sm:py-8 space-y-6">
       {/* Encabezado y Marca */}
       <div className="text-center space-y-2">
-        <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-blue-950/70 border border-[#2563EB]/40 text-blue-400 shadow-xl shadow-blue-950/80">
-          <Building2 className="w-8 h-8 text-blue-400" />
+        <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-purple-50 border border-purple-200 text-[#7C3AED] shadow-sm">
+          <Building2 className="w-8 h-8 text-[#7C3AED]" />
         </div>
-        <h1 className="text-2xl sm:text-3xl font-black text-[#F8FAFC] tracking-tight">
-          Auditoría de Inventario <span className="text-blue-400">Odoo 17</span>
+        <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
+          Auditoría de Inventario <span className="text-[#7C3AED]">Odoo 17</span>
         </h1>
-        <p className="text-xs sm:text-sm text-[#94A3B8] max-w-md mx-auto">
+        <p className="text-xs sm:text-sm text-[#64748B] max-w-md mx-auto">
           Conteo físico colaborativo en tiempo real para almacenes y piso de venta en multicompañía.
         </p>
 
         {/* Botón PWA install */}
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
           <PWAInstallButton />
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             Supabase Cloud Realtime Activo (sepeawvmamugivoptfyf)
           </span>
         </div>
       </div>
 
       {/* Selector de Modo: Crear Sesión vs Unirse con PIN */}
-      <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-[#1E293B] border border-[#334155]">
+      <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-slate-100 border border-[#E2E8F0]">
         <button
           type="button"
           onClick={() => {
@@ -542,8 +542,8 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           }}
           className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
             sessionMode === 'create'
-              ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-950'
-              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+              ? 'bg-[#7C3AED] text-white shadow-sm'
+              : 'text-[#64748B] hover:text-[#0F172A]'
           }`}
         >
           <Radio className="w-4 h-4" />
@@ -558,8 +558,8 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           }}
           className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
             sessionMode === 'join'
-              ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-950'
-              : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+              ? 'bg-[#7C3AED] text-white shadow-sm'
+              : 'text-[#64748B] hover:text-[#0F172A]'
           }`}
         >
           <Users className="w-4 h-4" />
@@ -568,28 +568,28 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
       </div>
 
       {/* Nombre del Auditor (Común a ambos modos) */}
-      <div className="p-4 rounded-2xl bg-[#1E293B] border border-[#334155] shadow-xl space-y-3">
-        <label className="block text-xs font-bold text-[#F8FAFC]">
+      <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-3">
+        <label className="block text-xs font-bold text-[#0F172A]">
           Nombre o Código del Auditor:
         </label>
         <div className="relative">
-          <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+          <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
           <input
             type="text"
             value={auditorName}
             onChange={(e) => setAuditorName(e.target.value)}
             placeholder="Ej: Carlos Gómez / Piso A"
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-sm font-medium text-[#F8FAFC] placeholder-[#94A3B8] outline-none"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED] text-sm font-medium text-[#0F172A] placeholder-[#94A3B8] outline-none"
           />
         </div>
       </div>
 
       {/* CONTENIDO MODO: UNIRSE A SESIÓN POR PIN */}
       {sessionMode === 'join' && (
-        <div className="p-5 rounded-2xl bg-[#1E293B] border border-[#334155] shadow-xl space-y-5">
+        <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-5">
           <div className="text-center space-y-1">
-            <h2 className="text-base font-bold text-[#F8FAFC]">Ingresa el PIN de la Auditoría</h2>
-            <p className="text-xs text-[#94A3B8]">
+            <h2 className="text-base font-bold text-[#0F172A]">Ingresa el PIN de la Auditoría</h2>
+            <p className="text-xs text-[#64748B]">
               Solicita el código de 4 dígitos al supervisor o creador de la sesión.
             </p>
           </div>
@@ -607,17 +607,17 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               }}
               placeholder="0000"
               disabled={isCheckingPin}
-              className="w-full text-center text-4xl font-mono font-black tracking-widest py-3 rounded-2xl bg-[#0F172A] border-2 border-[#2563EB] focus:border-blue-400 focus:ring-4 focus:ring-[#2563EB]/20 text-[#F8FAFC] outline-none disabled:opacity-50"
+              className="w-full text-center text-4xl font-mono font-black tracking-widest py-3 rounded-2xl bg-white border-2 border-[#7C3AED] focus:border-[#6D28D9] focus:ring-4 focus:ring-[#7C3AED]/20 text-[#0F172A] outline-none disabled:opacity-50"
             />
           </div>
 
           <div className="flex items-center justify-center gap-2 -mt-2">
-            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-[#94A3B8] hover:text-[#F8FAFC] transition">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-[#64748B] hover:text-[#0F172A] transition">
               <input
                 type="checkbox"
                 checked={autoCreateOnJoin}
                 onChange={(e) => setAutoCreateOnJoin(e.target.checked)}
-                className="rounded bg-[#0F172A] border-[#334155] text-[#2563EB] focus:ring-[#2563EB] cursor-pointer"
+                className="rounded bg-white border-[#CBD5E1] text-[#7C3AED] focus:ring-[#7C3AED] cursor-pointer"
               />
               <span>Crear sesión automáticamente si no existe en Supabase</span>
             </label>
@@ -625,14 +625,14 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
 
           {/* Tarjeta de Sesión No Encontrada con Opción de Creación */}
           {sessionNotFoundState && (
-            <div className="p-4 rounded-2xl bg-amber-950/60 border border-amber-600/50 text-amber-200 text-xs space-y-3 animate-in fade-in">
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-800 text-xs space-y-3 animate-in fade-in">
               <div className="flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="block text-amber-100 font-bold">
+                  <strong className="block text-amber-900 font-bold">
                     La sesión con PIN {sessionNotFoundState.pin} no existe en Supabase.
                   </strong>
-                  <p className="text-[11px] text-amber-300/90 mt-0.5 leading-relaxed">
+                  <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
                     Aún no ha sido iniciada por otro auditor o el PIN es incorrecto. Puedes crearla ahora con este mismo PIN.
                   </p>
                 </div>
@@ -642,7 +642,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                   type="button"
                   disabled={isCreatingFromNotFound}
                   onClick={() => handleCreateSessionWithPin(sessionNotFoundState.pin)}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-white font-bold text-xs cursor-pointer shadow-md transition text-center flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold text-xs cursor-pointer shadow-sm transition text-center flex items-center justify-center gap-2"
                 >
                   {isCreatingFromNotFound ? (
                     <>
@@ -657,7 +657,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                   type="button"
                   disabled={isCreatingFromNotFound}
                   onClick={() => setSessionNotFoundState(null)}
-                  className="py-2.5 px-3 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] text-xs cursor-pointer transition border border-[#334155]"
+                  className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-100 text-[#64748B] text-xs cursor-pointer transition border border-[#E2E8F0]"
                 >
                   Cancelar
                 </button>
@@ -669,7 +669,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
             type="button"
             onClick={handleJoinSession}
             disabled={joinPin.length !== 4 || isCheckingPin}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#2563EB] hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-blue-950 transition cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white font-bold text-sm shadow-md transition cursor-pointer"
           >
             {isCheckingPin ? (
               <>
@@ -689,45 +689,45 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
       {/* CONTENIDO MODO: CREAR SESIÓN (CONEXIÓN ODOO 17) */}
       {sessionMode === 'create' && (
         <form onSubmit={handleAuthenticate} className="space-y-4">
-          <div className="p-5 rounded-2xl bg-[#1E293B] border border-[#334155] shadow-xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#334155]">
-              <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+          <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#7C3AED] flex items-center gap-1.5">
                 <Server className="w-4 h-4" />
                 1. Conexión JSON-RPC Odoo 17
               </span>
 
               {isAuthenticated ? (
-                <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                <span className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   Conectado
                 </span>
               ) : (
-                <span className="text-[11px] text-[#94A3B8] font-mono">Multicompañía</span>
+                <span className="text-[11px] text-[#64748B] font-mono">Multicompañía</span>
               )}
             </div>
 
             {/* URL del Servidor Odoo con Sanitización en vivo */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-[#F8FAFC]">
+                <label className="text-xs font-medium text-[#0F172A]">
                   URL del Servidor Odoo:
                 </label>
-                <span className="text-[10px] text-blue-400">Sanitización automática</span>
+                <span className="text-[10px] text-[#7C3AED]">Sanitización automática</span>
               </div>
               <div className="relative">
-                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
                 <input
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://erp.pruebas.fvgrupoempresarial.com"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] text-xs sm:text-sm font-mono text-[#F8FAFC] placeholder-[#94A3B8] outline-none"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED] text-xs sm:text-sm font-mono text-[#0F172A] placeholder-[#94A3B8] outline-none"
                 />
               </div>
 
               {/* Vista previa de URL Sanitizada */}
               {sanitizedPreview && sanitizedPreview !== url && (
-                <p className="text-[11px] text-emerald-400/90 font-mono truncate">
+                <p className="text-[11px] text-emerald-600 font-mono truncate">
                   → Sanitizada a: <strong>{sanitizedPreview}</strong>
                 </p>
               )}
@@ -736,27 +736,27 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
             {/* Base de Datos y Proxy CORS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[#F8FAFC]">
+                <label className="text-xs font-medium text-[#0F172A]">
                   Base de Datos (db):
                 </label>
                 <div className="relative">
-                  <Database className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+                  <Database className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
                   <input
                     type="text"
                     value={db}
                     onChange={(e) => setDb(e.target.value)}
                     placeholder="odoo17_db"
-                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#0F172A] border border-[#334155] focus:border-[#2563EB] text-xs font-mono text-[#F8FAFC] placeholder-[#94A3B8] outline-none"
+                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] text-xs font-mono text-[#0F172A] placeholder-[#94A3B8] outline-none"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#F8FAFC]">
+                  <label className="text-xs font-medium text-[#0F172A]">
                     Proxy / Conexión CORS:
                   </label>
-                  <span className="text-[10px] text-blue-400">
+                  <span className="text-[10px] text-[#7C3AED]">
                     {proxyUrl === 'direct' ? 'Sin Proxy (Directo)' : 'Reenvío Activo'}
                   </span>
                 </div>
@@ -771,7 +771,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                       setProxyUrl(val);
                     }
                   }}
-                  className="w-full px-3 py-2 rounded-xl bg-[#0F172A] border border-[#334155] focus:border-[#2563EB] text-xs text-[#F8FAFC] outline-none"
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] text-xs text-[#0F172A] outline-none"
                 >
                   <option value="/api/odoo-proxy">Proxy Integrado (/api/odoo-proxy) ★ Recomendado</option>
                   <option value="direct">Petición Directa (Sin Proxy - CORS Odoo / Red Local)</option>
@@ -789,9 +789,9 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                       value={customProxyUrl}
                       onChange={(e) => setCustomProxyUrl(e.target.value)}
                       placeholder="Ej: https://mi-proxy.vercel.app/api?url="
-                      className="w-full px-3 py-1.5 rounded-lg bg-[#0F172A] border border-[#2563EB] text-xs font-mono text-[#F8FAFC] placeholder-[#94A3B8] outline-none"
+                      className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#7C3AED] text-xs font-mono text-[#0F172A] placeholder-[#94A3B8] outline-none"
                     />
-                    <p className="text-[10px] text-[#94A3B8]">
+                    <p className="text-[10px] text-[#64748B]">
                       Ingresa el prefijo de tu proxy Serverless o endpoint de reescritura.
                     </p>
                   </div>
@@ -802,33 +802,33 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
             {/* Usuario y Clave / API Key */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[#F8FAFC]">
+                <label className="text-xs font-medium text-[#0F172A]">
                   Usuario o Email:
                 </label>
                 <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="usuario@fvgrupoempresarial.com"
-                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#0F172A] border border-[#334155] focus:border-[#2563EB] text-xs text-[#F8FAFC] placeholder-[#94A3B8] outline-none"
+                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] text-xs text-[#0F172A] placeholder-[#94A3B8] outline-none"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[#F8FAFC]">
+                <label className="text-xs font-medium text-[#0F172A]">
                   Contraseña o API Key:
                 </label>
                 <div className="relative">
-                  <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+                  <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
                   <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#0F172A] border border-[#334155] focus:border-[#2563EB] text-xs text-[#F8FAFC] placeholder-[#94A3B8] outline-none"
+                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] text-xs text-[#0F172A] placeholder-[#94A3B8] outline-none"
                   />
                 </div>
               </div>
@@ -839,16 +839,16 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               <button
                 type="submit"
                 disabled={isLoadingAuth}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-[#F8FAFC] font-semibold text-xs transition cursor-pointer border border-[#334155]"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 text-[#0F172A] font-semibold text-xs transition cursor-pointer border border-[#E2E8F0] shadow-xs"
               >
                 {isLoadingAuth ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                    <RefreshCw className="w-4 h-4 animate-spin text-[#7C3AED]" />
                     <span>Autenticando en Odoo 17...</span>
                   </>
                 ) : (
                   <>
-                    <ShieldCheck className="w-4 h-4 text-blue-400" />
+                    <ShieldCheck className="w-4 h-4 text-[#7C3AED]" />
                     <span>{isAuthenticated ? 'Re-verificar Credenciales Odoo' : 'Conectar con Servidor Odoo'}</span>
                   </>
                 )}
@@ -858,26 +858,26 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
 
           {/* PARTE 2: COMPAÑÍA, UBICACIÓN Y CATEGORÍA (Si está autenticado) */}
           {isAuthenticated && (
-            <div className="p-5 rounded-2xl bg-[#1E293B] border border-[#2563EB]/40 shadow-xl space-y-4 animate-in fade-in">
-              <div className="flex items-center justify-between pb-2 border-b border-[#334155]">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+            <div className="p-5 rounded-2xl bg-white border border-purple-200 shadow-md space-y-4 animate-in fade-in">
+              <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#7C3AED] flex items-center gap-1.5">
                   <Building2 className="w-4 h-4" />
                   2. Filtros de Almacén y Auditoría
                 </span>
-                <span className="text-xs text-[#94A3B8] font-semibold">
+                <span className="text-xs text-[#64748B] font-semibold">
                   Multicompañía
                 </span>
               </div>
 
-              {/* Selector de Compañía (FV GRUPO EMPRESARIAL, C.A.) */}
+              {/* Selector de Compañía */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[#F8FAFC]">
+                <label className="text-xs font-medium text-[#0F172A]">
                   Compañía Odoo:
                 </label>
                 <select
                   value={selectedCompanyId}
                   onChange={(e) => setSelectedCompanyId(Number(e.target.value))}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#0F172A] border border-[#2563EB]/50 text-xs font-semibold text-[#F8FAFC] outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] text-xs font-semibold text-[#0F172A] outline-none"
                 >
                   {companies.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -893,16 +893,16 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               {/* Selector de Ubicación (stock.location) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#F8FAFC] flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                  <label className="text-xs font-medium text-[#0F172A] flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-[#7C3AED]" />
                     Ubicación Física (stock.location):
                   </label>
-                  <span className="text-[10px] text-[#94A3B8]">complete_name</span>
+                  <span className="text-[10px] text-[#64748B]">complete_name</span>
                 </div>
                 <select
                   value={selectedLocationId || ''}
                   onChange={(e) => setSelectedLocationId(e.target.value ? Number(e.target.value) : undefined)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] text-xs text-[#F8FAFC] outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] text-xs text-[#0F172A] outline-none"
                 >
                   <option value="">Todas las ubicaciones internas</option>
                   {locations.map((loc) => (
@@ -916,16 +916,16 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               {/* Selector de Categoría (product.category) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-[#F8FAFC] flex items-center gap-1">
-                    <Tag className="w-3.5 h-3.5 text-blue-400" />
+                  <label className="text-xs font-medium text-[#0F172A] flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5 text-[#7C3AED]" />
                     Categoría de Producto (product.category):
                   </label>
-                  <span className="text-[10px] text-[#94A3B8]">{deduplicatedCategories.length} únicas</span>
+                  <span className="text-[10px] text-[#64748B]">{deduplicatedCategories.length} únicas</span>
                 </div>
                 <select
                   value={selectedCategoryId || ''}
                   onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : undefined)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] text-xs text-[#F8FAFC] outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] text-xs text-[#0F172A] outline-none"
                 >
                   <option value="">Todas las categorías (100%)</option>
                   {deduplicatedCategories.map((cat) => (
@@ -938,15 +938,15 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
 
               {/* Botón para Iniciar Sesión de Auditoría */}
               {customPin && (
-                <div className="p-3 rounded-xl bg-blue-950/70 border border-[#2563EB]/50 flex items-center justify-between text-xs text-blue-200">
+                <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-between text-xs text-[#7C3AED]">
                   <div className="flex items-center gap-2">
-                    <Key className="w-4 h-4 text-blue-400" />
-                    <span>PIN para la nueva sesión: <strong className="font-mono text-white text-sm">{customPin}</strong></span>
+                    <Key className="w-4 h-4 text-[#7C3AED]" />
+                    <span>PIN para la nueva sesión: <strong className="font-mono text-[#0F172A] text-sm">{customPin}</strong></span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setCustomPin(null)}
-                    className="text-[11px] text-[#94A3B8] hover:text-[#F8FAFC] underline cursor-pointer"
+                    className="text-[11px] text-[#64748B] hover:text-[#0F172A] underline cursor-pointer"
                   >
                     Usar PIN aleatorio
                   </button>
@@ -957,7 +957,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                 type="button"
                 disabled={isCreatingSession}
                 onClick={handleStartNewSession}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#2563EB] hover:bg-blue-500 disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-sm shadow-xl shadow-blue-950 transition active:scale-98 cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-sm shadow-md shadow-[#7C3AED]/25 transition active:scale-98 cursor-pointer"
               >
                 {isCreatingSession ? (
                   <>
@@ -978,10 +978,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
 
       {/* Mensaje de Error si ocurre */}
       {authError && (
-        <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600/50 text-rose-200 text-xs flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <strong className="block text-rose-300">Aviso de Conexión:</strong>
+            <strong className="block text-rose-900">Aviso de Conexión:</strong>
             <p>{authError}</p>
           </div>
         </div>
@@ -993,21 +993,21 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
         <button
           type="button"
           onClick={handleStartDemo}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#0F172A] to-blue-950 hover:from-slate-800 hover:to-blue-900 border border-[#2563EB]/30 text-blue-300 text-xs font-semibold shadow-md transition cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200 text-[#7C3AED] text-xs font-semibold shadow-xs transition cursor-pointer"
         >
-          <Sparkles className="w-4 h-4 text-amber-400" />
+          <Sparkles className="w-4 h-4 text-amber-500" />
           <span>Probar con Datos Demo "FV GRUPO EMPRESARIAL, C.A."</span>
         </button>
 
         {/* Acordeón para Configurar Supabase Realtime */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden text-xs">
+        <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-hidden text-xs shadow-xs">
           <button
             type="button"
             onClick={() => setShowSupabaseSettings(!showSupabaseSettings)}
-            className="w-full flex items-center justify-between p-3 text-slate-400 hover:text-slate-200 cursor-pointer"
+            className="w-full flex items-center justify-between p-3 text-[#64748B] hover:text-[#0F172A] cursor-pointer"
           >
             <span className="flex items-center gap-2 font-medium">
-              <Radio className="w-3.5 h-3.5 text-indigo-400" />
+              <Radio className="w-3.5 h-3.5 text-[#7C3AED]" />
               Configurar Supabase Realtime (URL y Clave Anon)
             </span>
             <ChevronDown
@@ -1018,30 +1018,30 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           </button>
 
           {showSupabaseSettings && (
-            <div className="p-3.5 pt-1 space-y-3 border-t border-slate-800 bg-slate-950/70">
-              <p className="text-[11px] text-slate-400">
-                La app sincroniza en tiempo real de forma nativa a través de la nube de Supabase (tablas <code className="text-indigo-300">audit_sessions</code> y <code className="text-indigo-300">audit_counts</code>). Credenciales predeterminadas del proyecto:
+            <div className="p-3.5 pt-1 space-y-3 border-t border-[#E2E8F0] bg-[#F8FAFC]">
+              <p className="text-[11px] text-[#64748B]">
+                La app sincroniza en tiempo real de forma nativa a través de la nube de Supabase (tablas <code className="text-[#7C3AED]">audit_sessions</code> y <code className="text-[#7C3AED]">audit_items</code>). Credenciales predeterminadas del proyecto:
               </p>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-300">Supabase Project URL:</label>
+                <label className="text-[11px] font-medium text-[#0F172A]">Supabase Project URL:</label>
                 <input
                   type="text"
                   value={supabaseSettings.url}
                   onChange={(e) => setSupabaseSettingsState({ ...supabaseSettings, url: e.target.value.trim() })}
                   placeholder={DEFAULT_SUPABASE_URL}
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#CBD5E1] text-xs font-mono text-[#0F172A] outline-none"
                 />
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-medium text-slate-300">Supabase Publishable / Anon Public Key:</label>
+                  <label className="text-[11px] font-medium text-[#0F172A]">Supabase Publishable / Anon Public Key:</label>
                   <a
                     href="https://supabase.com/dashboard/project/sepeawvmamugivoptfyf/settings/api"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[10px] text-indigo-400 hover:text-indigo-300 underline"
+                    className="text-[10px] text-[#7C3AED] hover:underline"
                   >
                     Obtener en Supabase ↗
                   </a>
@@ -1051,10 +1051,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                   value={supabaseSettings.anonKey}
                   onChange={(e) => setSupabaseSettingsState({ ...supabaseSettings, anonKey: e.target.value.trim() })}
                   placeholder="Pega aquí la clave completa (eyJ... o sb_publishable_...)"
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-indigo-500 resize-none"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#CBD5E1] text-xs font-mono text-[#0F172A] outline-none focus:border-[#7C3AED] resize-none"
                 />
-                <p className="text-[10px] text-amber-300/80">
-                  * Debe ser la cadena completa copiada de Supabase (las claves anon públicas estándar empiezan por <span className="font-mono text-white">eyJhbGciOi...</span>).
+                <p className="text-[10px] text-amber-700">
+                  * Debe ser la cadena completa copiada de Supabase (las claves anon públicas estándar empiezan por <span className="font-mono text-[#0F172A]">eyJhbGciOi...</span>).
                 </p>
               </div>
 
@@ -1062,7 +1062,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                 <button
                   type="button"
                   onClick={handleSaveSupabase}
-                  className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer"
+                  className="flex-1 py-2 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-semibold text-xs transition cursor-pointer"
                 >
                   Guardar Credenciales
                 </button>
@@ -1092,7 +1092,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                       setAuthError(`Error de conexión con Supabase: ${err.message || String(err)}`);
                     }
                   }}
-                  className="py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white font-medium text-xs transition cursor-pointer"
+                  className="py-2 px-3 rounded-lg bg-white hover:bg-slate-100 border border-[#E2E8F0] text-[#0F172A] font-medium text-xs transition cursor-pointer"
                   title="Comprobar si la clave y la URL son válidas"
                 >
                   Probar Conexión
@@ -1100,20 +1100,20 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
               </div>
 
               {/* Botón para ver y copiar el Script SQL de Supabase */}
-              <div className="pt-2 border-t border-slate-800">
+              <div className="pt-2 border-t border-[#E2E8F0]">
                 <button
                   type="button"
                   onClick={() => setShowSqlSchema(!showSqlSchema)}
-                  className="flex items-center gap-1.5 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
+                  className="flex items-center gap-1.5 text-[11px] text-[#7C3AED] hover:underline font-semibold cursor-pointer"
                 >
                   <Code2 className="w-3.5 h-3.5" />
                   <span>{showSqlSchema ? 'Ocultar' : 'Ver'} Script SQL para Supabase (Tablas audit_sessions, audit_items y RLS)</span>
                 </button>
 
                 {showSqlSchema && (
-                  <div className="mt-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="mt-2 p-2.5 rounded-xl bg-white border border-[#E2E8F0] space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400 font-mono">audit_schema_rls.sql</span>
+                      <span className="text-[10px] text-[#64748B] font-mono">audit_schema_rls.sql</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -1121,13 +1121,13 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                           setCopiedSql(true);
                           setTimeout(() => setCopiedSql(false), 2000);
                         }}
-                        className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                        className="flex items-center gap-1 text-[10px] text-[#7C3AED] hover:underline cursor-pointer"
                       >
-                        {copiedSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        {copiedSql ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                         <span>{copiedSql ? 'Copiado' : 'Copiar SQL'}</span>
                       </button>
                     </div>
-                    <pre className="font-mono text-[9px] text-slate-300 overflow-x-auto p-2 rounded bg-slate-900 max-h-44 leading-relaxed">
+                    <pre className="font-mono text-[9px] text-[#0F172A] overflow-x-auto p-2 rounded bg-[#F8FAFC] border border-[#E2E8F0] max-h-44 leading-relaxed">
                       {SUPABASE_SQL_SCHEMA}
                     </pre>
                   </div>
@@ -1137,12 +1137,12 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           )}
 
           {/* Botón para descargar el código del proyecto completo */}
-          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-[11px] text-slate-400">¿Deseas ejecutar o modificar localmente?</span>
+          <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between">
+            <span className="text-[11px] text-[#64748B]">¿Deseas ejecutar o modificar localmente?</span>
             <a
               href="/odoo-audit-app.zip"
               download="odoo-audit-app.zip"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 hover:border-indigo-500/50 text-[11px] font-medium text-indigo-300 hover:text-white transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-purple-50 border border-[#E2E8F0] hover:border-purple-300 text-[11px] font-medium text-[#7C3AED] transition cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               Descargar Código (.ZIP)

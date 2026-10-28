@@ -1095,7 +1095,7 @@ export default function App() {
   // Si no hay sesión iniciada, mostrar el formulario de acceso
   if (!session || !odooConfig) {
     return (
-      <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] flex flex-col justify-between">
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between">
         <AuthForm
           onSessionStarted={(newSession, config, isDemo, initialCounts, initialCustomItems) => {
             setIsDemoMode(isDemo);
@@ -1128,7 +1128,7 @@ export default function App() {
           }}
           savedConfig={odooConfig || undefined}
         />
-        <footer className="py-4 text-center text-xs text-[#94A3B8] border-t border-[#334155]">
+        <footer className="py-4 text-center text-xs text-[#64748B] border-t border-[#E2E8F0]">
           Odoo 17 JSON-RPC Strict • Multicompañía • Supabase Realtime • PWA Offline Ready
         </footer>
       </div>
@@ -1136,7 +1136,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] flex flex-col pb-24 selection:bg-[#2563EB] selection:text-white">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col pb-24 selection:bg-[#7C3AED] selection:text-white">
       {/* 1. BARRA SUPERIOR FIJA DE SESIÓN (PIN, Estado WebSocket, Auditores en Vivo, Modo Offline) */}
       <SessionBar
         session={session}
@@ -1151,30 +1151,30 @@ export default function App() {
         onOpenOdooModal={() => setShowOdooModal(true)}
       />
 
-      {/* 6. REQUISITO: Notificaciones Visuales y Colores de Alertas del Escáner (Verde Éxito / Rojo Error) */}
+      {/* 6. Notificaciones Visuales y Colores de Alertas del Escáner */}
       {scannerAlert && (
         <div
           className={`fixed top-14 sm:top-16 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] sm:w-auto px-4 py-3 rounded-2xl text-xs sm:text-sm font-bold shadow-2xl transition-all duration-300 flex items-center justify-between gap-3 ${
             scannerAlert.type === 'success'
-              ? 'bg-emerald-950/95 border-2 border-emerald-500 text-emerald-100 shadow-emerald-950/80 animate-in fade-in slide-in-from-top-3'
+              ? 'bg-emerald-50 border-2 border-emerald-500 text-emerald-800 shadow-emerald-500/10 animate-in fade-in slide-in-from-top-3'
               : scannerAlert.type === 'error'
-              ? 'bg-rose-950/95 border-2 border-rose-500 text-rose-100 shadow-rose-950/80 animate-pulse'
+              ? 'bg-rose-50 border-2 border-rose-500 text-rose-800 shadow-rose-500/10 animate-pulse'
               : scannerAlert.type === 'warning'
-              ? 'bg-amber-950/95 border-2 border-amber-500 text-amber-100 shadow-amber-950/80 animate-in fade-in slide-in-from-top-3'
-              : 'bg-indigo-950/95 border-2 border-indigo-500 text-indigo-100 shadow-indigo-950/80 animate-in fade-in slide-in-from-top-3'
+              ? 'bg-amber-50 border-2 border-amber-500 text-amber-800 shadow-amber-500/10 animate-in fade-in slide-in-from-top-3'
+              : 'bg-purple-50 border-2 border-[#7C3AED] text-purple-800 shadow-purple-500/10 animate-in fade-in slide-in-from-top-3'
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            {scannerAlert.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
-            {scannerAlert.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />}
-            {scannerAlert.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />}
-            {scannerAlert.type === 'info' && <RefreshCw className="w-5 h-5 text-indigo-400 shrink-0 animate-spin" />}
+            {scannerAlert.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+            {scannerAlert.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 animate-bounce" />}
+            {scannerAlert.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />}
+            {scannerAlert.type === 'info' && <RefreshCw className="w-5 h-5 text-[#7C3AED] shrink-0 animate-spin" />}
             <span className="leading-snug truncate">{scannerAlert.message}</span>
           </div>
           <button
             type="button"
             onClick={() => setScannerAlert(null)}
-            className="p-1 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition shrink-0 cursor-pointer text-xs"
+            className="p-1 rounded-lg hover:bg-slate-200/60 text-[#64748B] hover:text-[#0F172A] transition shrink-0 cursor-pointer text-xs"
             title="Cerrar notificación"
           >
             ✕
@@ -1184,7 +1184,7 @@ export default function App() {
 
       {/* Banner de notificación en vivo cuando otro auditor hace un conteo */}
       {lastAuditNotification && !scannerAlert && (
-        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-2xl shadow-indigo-950/80 animate-in fade-in slide-in-from-top-2 border border-indigo-400/40">
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-[#7C3AED] text-white text-xs font-bold shadow-xl shadow-[#7C3AED]/20 animate-in fade-in slide-in-from-top-2 border border-purple-400">
           {lastAuditNotification}
         </div>
       )}
@@ -1192,18 +1192,18 @@ export default function App() {
       {/* 2. ZONA PRINCIPAL DE BÚSQUEDA Y ESCANEO RÁPIDO */}
       <main className="max-w-5xl w-full mx-auto px-3.5 pt-3.5 space-y-3.5">
         {/* Banner de Categoría Obligatoria Activa y Botón de Cambio */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-[#1E293B] border border-[#334155] text-xs shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-white border border-[#E2E8F0] text-xs shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-2 rounded-xl bg-blue-950/60 border border-[#2563EB]/40 text-blue-400 shrink-0">
+            <div className="p-2 rounded-xl bg-purple-50 border border-purple-200 text-[#7C3AED] shrink-0">
               <FolderKanban className="w-4 h-4" />
             </div>
             <div className="min-w-0 truncate">
-              <span className="text-[11px] text-[#94A3B8] block font-medium">
+              <span className="text-[11px] text-[#64748B] block font-medium">
                 {session.categoryIds && session.categoryIds.length > 1
                   ? `Áreas de Auditoría (${session.categoryIds.length} Categorías combinadas):`
                   : 'Área de Auditoría Asignada:'}
               </span>
-              <strong className="text-[#F8FAFC] text-xs sm:text-sm font-bold truncate block" title={session.categoryName}>
+              <strong className="text-[#0F172A] text-xs sm:text-sm font-bold truncate block" title={session.categoryName}>
                 {session.categoryName || 'Selecciona una o más categorías para comenzar'}
               </strong>
             </div>
@@ -1214,7 +1214,7 @@ export default function App() {
               loadCategoriesOnly(odooConfig, isDemoMode);
               setIsCategoryModalOpen(true);
             }}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 border border-[#334155] text-blue-300 hover:text-[#F8FAFC] font-medium text-xs transition cursor-pointer active:scale-95 shrink-0 self-end sm:self-auto"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#7C3AED] hover:text-[#6D28D9] font-medium text-xs transition cursor-pointer active:scale-95 shrink-0 self-end sm:self-auto shadow-xs"
             title="Cambiar categoría de auditoría"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -1231,7 +1231,7 @@ export default function App() {
             }}
             className="relative flex-1"
           >
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
             <input
               ref={searchInputRef}
               type="text"
@@ -1240,7 +1240,7 @@ export default function App() {
               onKeyDown={handleSearchKeyDown}
               placeholder="Escanear código de barras o buscar producto..."
               autoFocus
-              className="w-full pl-10 pr-24 py-2.5 rounded-2xl bg-[#1E293B] border border-[#334155] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/25 text-sm font-medium text-[#F8FAFC] placeholder-[#94A3B8] outline-none shadow-md shadow-slate-950"
+              className="w-full pl-10 pr-24 py-2.5 rounded-2xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 text-sm font-medium text-[#0F172A] placeholder-[#94A3B8] outline-none shadow-sm"
             />
             {/* Indicador de modo escáner rápido */}
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -1248,12 +1248,12 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="p-1 rounded-md text-[#94A3B8] hover:text-[#F8FAFC]"
+                  className="p-1 rounded-md text-[#64748B] hover:text-[#0F172A]"
                 >
                   ✕
                 </button>
               )}
-              <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#0F172A] text-blue-300 border border-[#334155]">
+              <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#F8FAFC] text-[#7C3AED] border border-[#E2E8F0]">
                 Enter = Enfocar
               </span>
             </div>
@@ -1263,7 +1263,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setShowCameraScanner(true)}
-            className="flex items-center justify-center p-2.5 rounded-2xl bg-[#1E293B] hover:bg-slate-800 border border-[#334155] text-blue-300 hover:text-[#F8FAFC] shadow-md transition active:scale-95 cursor-pointer"
+            className="flex items-center justify-center p-2.5 rounded-2xl bg-white hover:bg-slate-50 border border-[#CBD5E1] text-[#7C3AED] hover:text-[#6D28D9] shadow-sm transition active:scale-95 cursor-pointer"
             title="Abrir cámara del dispositivo para escanear código"
           >
             <Camera className="w-5 h-5" />
@@ -1271,18 +1271,18 @@ export default function App() {
         </div>
 
         {/* 3. FILTROS Y ESTADÍSTICAS RÁPIDAS */}
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-[#1E293B] border border-[#334155] text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-white border border-[#E2E8F0] text-xs shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
           {/* Métricas rápidas */}
-          <div className="flex items-center gap-3 text-[#94A3B8]">
+          <div className="flex items-center gap-3 text-[#64748B]">
             <span className="font-semibold">
-              Total: <strong className="text-[#F8FAFC]">{items.length}</strong>
+              Total: <strong className="text-[#0F172A]">{items.length}</strong>
             </span>
             <span>•</span>
-            <span className="text-blue-400">
-              Auditados: <strong className="text-blue-300">{totalAuditedCount}</strong>
+            <span className="text-[#7C3AED]">
+              Auditados: <strong className="text-[#7C3AED]">{totalAuditedCount}</strong>
             </span>
             <span>•</span>
-            <span className={countWithDiff > 0 ? 'text-amber-400 font-bold' : 'text-[#94A3B8]'}>
+            <span className={countWithDiff > 0 ? 'text-amber-600 font-bold' : 'text-[#64748B]'}>
               Diferencias: <strong>{countWithDiff}</strong>
             </span>
           </div>
@@ -1293,8 +1293,8 @@ export default function App() {
               onClick={() => setDiscrepancyFilter('all')}
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'all'
-                  ? 'bg-[#2563EB] text-white shadow-xs'
-                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
+                  ? 'bg-[#7C3AED] text-white shadow-xs'
+                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
               }`}
             >
               Todos
@@ -1304,7 +1304,7 @@ export default function App() {
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'diff'
                   ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
+                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
               }`}
             >
               Con Dif.
@@ -1314,7 +1314,7 @@ export default function App() {
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'deficit'
                   ? 'bg-[#EF4444] text-white shadow-xs'
-                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
+                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
               }`}
             >
               Faltantes
@@ -1324,7 +1324,7 @@ export default function App() {
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'surplus'
                   ? 'bg-[#10B981] text-white shadow-xs'
-                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
+                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
               }`}
             >
               Sobrantes
@@ -1332,7 +1332,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 3. BARRA DE PESTAÑAS DINÁMICA: "Todas las Categorías" + pestaña individual por cada categoría seleccionada en el modal */}
+        {/* 3. BARRA DE PESTAÑAS DINÁMICA */}
         {dynamicCategoryTabs.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
             {/* Pestaña: "Todas las Categorías (N)" donde N es la suma exacta de todos los productos */}
@@ -1341,16 +1341,16 @@ export default function App() {
               onClick={() => setSelectedCategoryFilter('all')}
               className={`px-3.5 py-1.5 rounded-xl font-bold shrink-0 transition cursor-pointer border flex items-center gap-1.5 shadow-sm ${
                 selectedCategoryFilter === 'all'
-                  ? 'bg-[#2563EB] text-white border-blue-400 shadow-blue-950/60'
-                  : 'bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-slate-500 hover:text-[#F8FAFC]'
+                  ? 'bg-[#7C3AED] text-white border-[#7C3AED] shadow-sm'
+                  : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-slate-300 hover:text-[#0F172A]'
               }`}
             >
               <span>Todas las Categorías</span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   selectedCategoryFilter === 'all'
-                    ? 'bg-blue-400/30 text-white border border-blue-300/40'
-                    : 'bg-[#0F172A] text-[#94A3B8]'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-100 text-[#64748B]'
                 }`}
               >
                 {items.length}
@@ -1367,16 +1367,16 @@ export default function App() {
                   onClick={() => setSelectedCategoryFilter(tab.id)}
                   className={`px-3.5 py-1.5 rounded-xl font-medium shrink-0 transition cursor-pointer border flex items-center gap-1.5 shadow-sm ${
                     isTabActive
-                      ? 'bg-[#2563EB] text-white border-blue-400 shadow-blue-950/60 font-bold'
-                      : 'bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-slate-500 hover:text-[#F8FAFC]'
+                      ? 'bg-[#7C3AED] text-white border-[#7C3AED] font-bold shadow-sm'
+                      : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-slate-300 hover:text-[#0F172A]'
                   }`}
                 >
                   <span>{tab.name}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                       isTabActive
-                        ? 'bg-blue-400/30 text-white border border-blue-300/40'
-                        : 'bg-[#0F172A] text-[#94A3B8]'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-100 text-[#64748B]'
                     }`}
                   >
                     {tab.count}
@@ -1390,8 +1390,8 @@ export default function App() {
         {/* Indicador de Carga */}
         {isLoadingItems && (
           <div className="py-16 text-center space-y-3">
-            <RefreshCw className="w-8 h-8 animate-spin text-blue-400 mx-auto" />
-            <p className="text-sm font-medium text-[#94A3B8]">
+            <RefreshCw className="w-8 h-8 animate-spin text-[#7C3AED] mx-auto" />
+            <p className="text-sm font-medium text-[#64748B]">
               Extrayendo productos desde Odoo 17 (stock.quant)...
             </p>
           </div>
@@ -1399,29 +1399,29 @@ export default function App() {
 
         {/* Mensaje de Error de Carga Transparente */}
         {loadError && !isLoadingItems && (
-          <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-600 text-rose-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl shadow-rose-950/60">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-300 text-rose-700 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
             <div className="flex items-start gap-2.5">
-              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <strong className="block text-rose-100 font-bold mb-0.5">Respuesta de Odoo:</strong>
+                <strong className="block text-rose-900 font-bold mb-0.5">Respuesta de Odoo:</strong>
                 <span className="font-mono text-[11px] leading-relaxed break-words">{loadError}</span>
               </div>
             </div>
             <button
               onClick={() => loadProducts(odooConfig, session.locationId, isDemoMode)}
-              className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer shrink-0 transition active:scale-95 text-center self-end sm:self-auto"
+              className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer shrink-0 transition active:scale-95 text-center self-end sm:self-auto"
             >
               Reintentar
             </button>
           </div>
         )}
 
-        {/* 4. LISTADO DE PRODUCTOS EN MODO OSCURO ADAPTADO A MÓVILES */}
+        {/* 4. LISTADO DE PRODUCTOS */}
         {!isLoadingItems && filteredItems.length === 0 && (
-          <div className="py-16 text-center rounded-2xl border border-dashed border-[#334155] p-8 space-y-2 bg-[#1E293B]/40">
-            <Boxes className="w-10 h-10 text-slate-500 mx-auto" />
-            <h3 className="text-sm font-bold text-[#F8FAFC]">No se encontraron productos</h3>
-            <p className="text-xs text-[#94A3B8] max-w-sm mx-auto">
+          <div className="py-16 text-center rounded-2xl border border-dashed border-[#CBD5E1] p-8 space-y-2 bg-white">
+            <Boxes className="w-10 h-10 text-slate-400 mx-auto" />
+            <h3 className="text-sm font-bold text-[#0F172A]">No se encontraron productos</h3>
+            <p className="text-xs text-[#64748B] max-w-sm mx-auto">
               Prueba cambiando el criterio de búsqueda o seleccionando otra ubicación/categoría.
             </p>
           </div>
@@ -1442,12 +1442,12 @@ export default function App() {
         </div>
       </main>
 
-      {/* 1. REQUISITO: Botón flotante circular 'Volver Arriba' (> 300px) */}
+      {/* 1. Botón flotante circular 'Volver Arriba' (> 300px) */}
       {showScrollTop && (
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-20 right-4 sm:bottom-22 sm:right-6 z-40 w-12 h-12 rounded-full bg-[#2563EB] hover:bg-blue-500 active:scale-90 text-white shadow-2xl shadow-blue-950 flex items-center justify-center border-2 border-blue-400/40 transition-all duration-300 animate-in fade-in zoom-in cursor-pointer select-none"
+          className="fixed bottom-20 right-4 sm:bottom-22 sm:right-6 z-40 w-12 h-12 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] active:scale-90 text-white shadow-xl shadow-[#7C3AED]/30 flex items-center justify-center border-2 border-white transition-all duration-300 animate-in fade-in zoom-in cursor-pointer select-none"
           title="Volver al inicio de la lista"
           aria-label="Volver arriba"
         >
@@ -1456,25 +1456,25 @@ export default function App() {
       )}
 
       {/* 5. BARRA INFERIOR FIJA FLOTANTE PARA ACCIONES PRINCIPALES (Enviar a Odoo + Exportar Excel) */}
-      <footer className="fixed bottom-0 inset-x-0 z-40 bg-[#1E293B]/95 backdrop-blur-md border-t border-[#334155] px-4 py-2.5 shadow-2xl">
+      <footer className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] px-4 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.05)]">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
           {/* Botón Exportar a Excel (.xlsx) */}
           <button
             type="button"
             onClick={handleExportExcel}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 border border-[#334155] text-[#F8FAFC] text-xs font-semibold shadow-md transition active:scale-95 cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#0F172A] text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
             title="Descargar reporte en formato Excel (.xlsx)"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             <span className="hidden sm:inline">Exportar Excel (.xlsx)</span>
             <span className="sm:hidden">Excel</span>
           </button>
 
-          {/* Botón Principal: Enviar Ajuste a Odoo 17 (Verde Esmeralda para acción positiva final) */}
+          {/* Botón Principal: Enviar Ajuste a Odoo 17 (#10B981 Verde Esmeralda sólido con texto blanco) */}
           <button
             type="button"
             onClick={() => setShowOdooModal(true)}
-            className="flex-1 max-w-sm flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#059669] hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-950 border border-emerald-500/40 transition active:scale-95 cursor-pointer"
+            className="flex-1 max-w-sm flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#10B981] hover:bg-[#059669] text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
             title="Escribe únicamente en inventory_quantity de stock.quant"
           >
             <Send className="w-4 h-4" />
