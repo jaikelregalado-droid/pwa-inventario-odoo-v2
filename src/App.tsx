@@ -69,6 +69,7 @@ import { ScannerModal } from './components/ScannerModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { CategorySelectionModal } from './components/CategorySelectionModal';
 import { CustomInventoryModal } from './components/CustomInventoryModal';
+import { OdooConfigModal } from './components/OdooConfigModal';
 
 const STORAGE_SESSION_KEY = 'odoo_audit_session_data';
 const STORAGE_CONFIG_KEY = 'odoo_audit_config_data';
@@ -153,6 +154,7 @@ export default function App() {
 
   // Modales
   const [showOdooModal, setShowOdooModal] = useState<boolean>(false);
+  const [showOdooConfigModal, setShowOdooConfigModal] = useState<boolean>(false);
   const [showRealtimeModal, setShowRealtimeModal] = useState<boolean>(false);
   const [showCameraScanner, setShowCameraScanner] = useState<boolean>(false);
   const [showCustomInventoryModal, setShowCustomInventoryModal] = useState<boolean>(false);
@@ -1148,7 +1150,7 @@ export default function App() {
         onLogout={handleLogout}
         onLeaveSession={handleLogout}
         onOpenSyncModal={() => setShowRealtimeModal(true)}
-        onOpenOdooModal={() => setShowOdooModal(true)}
+        onOpenOdooModal={() => setShowOdooConfigModal(true)}
       />
 
       {/* 6. Notificaciones Visuales y Colores de Alertas del Escáner */}
@@ -1581,6 +1583,25 @@ export default function App() {
             sound.playSuccess();
             setScannerAlert({
               message: `✓ Inventario personalizado cargado (${customItems.length} productos)`,
+              type: 'success',
+              id: Date.now(),
+            });
+          }}
+        />
+      )}
+
+      {/* Modal de Configuración JSON-RPC Odoo 17 accesible desde el Header */}
+      {odooConfig && (
+        <OdooConfigModal
+          isOpen={showOdooConfigModal}
+          onClose={() => setShowOdooConfigModal(false)}
+          odooConfig={odooConfig}
+          onSaveConfig={(newConfig) => {
+            setOdooConfig(newConfig);
+            localStorage.setItem(STORAGE_CONFIG_KEY, JSON.stringify(newConfig));
+            sound.playSuccess();
+            setScannerAlert({
+              message: '✓ Configuración de Odoo 17 actualizada correctamente',
               type: 'success',
               id: Date.now(),
             });

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, Users, Wifi, WifiOff, Volume2, VolumeX, LogOut, ShieldAlert, Radio, Download } from 'lucide-react';
+import { Copy, Check, Users, Wifi, WifiOff, Volume2, VolumeX, LogOut, ShieldAlert, Radio, Download, Settings } from 'lucide-react';
 import { AuditSession, AuditorPresence } from '../types';
 import { sound } from '../lib/audio';
 
@@ -215,6 +215,18 @@ export const SessionBar: React.FC<SessionBarProps> = ({
             title={isMuted ? 'Activar Sonidos de Conteo' : 'Silenciar'}
           >
             {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+
+          {/* Configuración Odoo */}
+          <button
+            type="button"
+            onClick={onOpenOdooModal}
+            className="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#64748B] hover:text-[#7C3AED] transition cursor-pointer shadow-sm"
+            title="Configuración de Credenciales Odoo 17"
+            aria-label="Configuración Odoo"
+          >
+            <Settings className="w-4 h-4 text-[#7C3AED]" />
+            <span className="hidden xl:inline text-xs font-semibold text-[#0F172A]">Configuración Odoo</span>
           </button>
 
           {/* Descargar Código Fuente ZIP */}

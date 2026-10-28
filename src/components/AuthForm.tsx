@@ -16,13 +16,15 @@ import {
   Radio,
   ExternalLink,
   ChevronDown,
+  ChevronUp,
   RefreshCw,
   FolderOpen,
   Download,
   Loader2,
   Code2,
   Check,
-  Copy
+  Copy,
+  Settings
 } from 'lucide-react';
 import { OdooConnectionConfig, OdooCompany, OdooLocation, OdooCategory, AuditSession, RealtimeCountUpdate, QuantItem } from '../types';
 import { sanitizeOdooUrl, authenticateOdoo, fetchLocations, fetchCategories, getDemoFVGrupoData, getCachedUid } from '../lib/odoo';
@@ -90,15 +92,20 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
   const [customProxyUrl, setCustomProxyUrl] = useState<string>('');
   const [isCustomProxy, setIsCustomProxy] = useState<boolean>(false);
 
-  // Estado de autenticación en Odoo
+  // Acordeón de credenciales Odoo: cerrado por defecto para interfaz limpia
+  const [showOdooConfig, setShowOdooConfig] = useState<boolean>(false);
+
+  // Estado de autenticación en Odoo (inicia como conectado con las credenciales por defecto de FV Grupo)
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(false);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authenticatedUid, setAuthenticatedUid] = useState<number | undefined>(() => getCachedUid() || undefined);
 
   // Compañías y catálogos
-  const [companies, setCompanies] = useState<OdooCompany[]>([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<number>(1);
+  const [companies, setCompanies] = useState<OdooCompany[]>(() => [
+    { id: savedConfig?.companyId || 1, name: savedConfig?.companyName || 'FV GRUPO EMPRESARIAL, C.A.' }
+  ]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number>(savedConfig?.companyId || 1);
   const [locations, setLocations] = useState<OdooLocation[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<number | undefined>(undefined);
   const [categories, setCategories] = useState<OdooCategory[]>([]);
@@ -166,6 +173,11 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
       }
     }
   }, [savedConfig]);
+
+  // Carga inicial en segundo plano de catálogos y verificación de conexión
+  useEffect(() => {
+    handleAuthenticate();
+  }, []);
 
   // Probar y autenticar en Odoo 17
   const handleAuthenticate = async (e?: React.FormEvent) => {
@@ -509,201 +521,134 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
   };
 
   return (
-    <div className="w-full max-w-xl mx-auto px-4 py-6 sm:py-8 space-y-6">
-      {/* Encabezado y Marca */}
-      <div className="text-center space-y-2">
-        <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-purple-50 border border-purple-200 text-[#7C3AED] shadow-sm">
-          <Building2 className="w-8 h-8 text-[#7C3AED]" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
-          Auditoría de Inventario <span className="text-[#7C3AED]">Odoo 17</span>
-        </h1>
-        <p className="text-xs sm:text-sm text-[#64748B] max-w-md mx-auto">
-          Conteo físico colaborativo en tiempo real para almacenes y piso de venta en multicompañía.
-        </p>
-
-        {/* Botón PWA install */}
-        <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
-          <PWAInstallButton />
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Supabase Cloud Realtime Activo (sepeawvmamugivoptfyf)
-          </span>
-        </div>
-      </div>
-
-      {/* Selector de Modo: Crear Sesión vs Unirse con PIN */}
-      <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-slate-100 border border-[#E2E8F0]">
-        <button
-          type="button"
-          onClick={() => {
-            setSessionMode('create');
-            setAuthError(null);
-          }}
-          className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-            sessionMode === 'create'
-              ? 'bg-[#7C3AED] text-white shadow-sm'
-              : 'text-[#64748B] hover:text-[#0F172A]'
-          }`}
-        >
-          <Radio className="w-4 h-4" />
-          <span>Crear Sesión (Lead)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSessionMode('join');
-            setAuthError(null);
-          }}
-          className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-            sessionMode === 'join'
-              ? 'bg-[#7C3AED] text-white shadow-sm'
-              : 'text-[#64748B] hover:text-[#0F172A]'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Unirse con PIN</span>
-        </button>
-      </div>
-
-      {/* Nombre del Auditor (Común a ambos modos) */}
-      <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-3">
-        <label className="block text-xs font-bold text-[#0F172A]">
-          Nombre o Código del Auditor:
-        </label>
-        <div className="relative">
-          <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
-          <input
-            type="text"
-            value={auditorName}
-            onChange={(e) => setAuditorName(e.target.value)}
-            placeholder="Ej: Carlos Gómez / Piso A"
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED] text-sm font-medium text-[#0F172A] placeholder-[#94A3B8] outline-none"
-          />
-        </div>
-      </div>
-
-      {/* CONTENIDO MODO: UNIRSE A SESIÓN POR PIN */}
-      {sessionMode === 'join' && (
-        <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-5">
-          <div className="text-center space-y-1">
-            <h2 className="text-base font-bold text-[#0F172A]">Ingresa el PIN de la Auditoría</h2>
-            <p className="text-xs text-[#64748B]">
-              Solicita el código de 4 dígitos al supervisor o creador de la sesión.
-            </p>
-          </div>
-
-          <div className="max-w-xs mx-auto">
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              value={joinPin}
-              onChange={(e) => {
-                setJoinPin(e.target.value.replace(/\D/g, ''));
-                if (sessionNotFoundState) setSessionNotFoundState(null);
-                if (authError) setAuthError(null);
-              }}
-              placeholder="0000"
-              disabled={isCheckingPin}
-              className="w-full text-center text-4xl font-mono font-black tracking-widest py-3 rounded-2xl bg-white border-2 border-[#7C3AED] focus:border-[#6D28D9] focus:ring-4 focus:ring-[#7C3AED]/20 text-[#0F172A] outline-none disabled:opacity-50"
-            />
-          </div>
-
-          <div className="flex items-center justify-center gap-2 -mt-2">
-            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-[#64748B] hover:text-[#0F172A] transition">
-              <input
-                type="checkbox"
-                checked={autoCreateOnJoin}
-                onChange={(e) => setAutoCreateOnJoin(e.target.checked)}
-                className="rounded bg-white border-[#CBD5E1] text-[#7C3AED] focus:ring-[#7C3AED] cursor-pointer"
-              />
-              <span>Crear sesión automáticamente si no existe en Supabase</span>
-            </label>
-          </div>
-
-          {/* Tarjeta de Sesión No Encontrada con Opción de Creación */}
-          {sessionNotFoundState && (
-            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-800 text-xs space-y-3 animate-in fade-in">
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block text-amber-900 font-bold">
-                    La sesión con PIN {sessionNotFoundState.pin} no existe en Supabase.
-                  </strong>
-                  <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-                    Aún no ha sido iniciada por otro auditor o el PIN es incorrecto. Puedes crearla ahora con este mismo PIN.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={isCreatingFromNotFound}
-                  onClick={() => handleCreateSessionWithPin(sessionNotFoundState.pin)}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold text-xs cursor-pointer shadow-sm transition text-center flex items-center justify-center gap-2"
-                >
-                  {isCreatingFromNotFound ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Guardando en Supabase (UPSERT)...</span>
-                    </>
-                  ) : (
-                    <span>Crear Sesión con PIN {sessionNotFoundState.pin}</span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  disabled={isCreatingFromNotFound}
-                  onClick={() => setSessionNotFoundState(null)}
-                  className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-100 text-[#64748B] text-xs cursor-pointer transition border border-[#E2E8F0]"
-                >
-                  Cancelar
-                </button>
-              </div>
+    <div className="w-full min-h-screen bg-[#F8FAFC]">
+      {/* 1. BARRA SUPERIOR (HEADER) CON ESTADO DE CONEXIÓN Y ACCESO A CONFIGURACIÓN ODOO */}
+      <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+        <div className="max-w-xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-purple-50 border border-purple-200 text-[#7C3AED]">
+              <Building2 className="w-4 h-4 text-[#7C3AED]" />
             </div>
-          )}
+            <div>
+              <h2 className="text-xs sm:text-sm font-black text-[#0F172A] leading-tight">
+                Auditoría <span className="text-[#7C3AED]">Odoo 17</span>
+              </h2>
+              <span className="text-[10px] text-[#64748B] block font-medium">FV Grupo Empresarial</span>
+            </div>
+          </div>
 
+          <div className="flex items-center gap-2">
+            {/* Estado Resumido de Conexión (Badge Verde) */}
+            {isAuthenticated ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Conectado</span>
+              </span>
+            ) : isLoadingAuth ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-50 border border-amber-200 text-amber-700 shadow-2xs">
+                <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
+                <span>Conectando...</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-50 border border-rose-200 text-rose-700">
+                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                <span>Desconectado</span>
+              </span>
+            )}
+
+            {/* Botón Discreto "Configuración Odoo" */}
+            <button
+              type="button"
+              onClick={() => setShowOdooConfig((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer text-xs font-semibold shadow-2xs ${
+                showOdooConfig
+                  ? 'bg-purple-50 border-[#7C3AED] text-[#7C3AED]'
+                  : 'bg-white hover:bg-slate-50 border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
+              }`}
+              title="Mostrar / ocultar configuración de credenciales Odoo"
+            >
+              <Settings className="w-3.5 h-3.5 text-[#7C3AED]" />
+              <span className="hidden xs:inline">Configuración Odoo</span>
+              {showOdooConfig ? (
+                <ChevronUp className="w-3.5 h-3.5 text-[#7C3AED]" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+              )}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="w-full max-w-xl mx-auto px-4 py-6 sm:py-8 space-y-5">
+        {/* Encabezado y Marca */}
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
+            Auditoría de Inventario <span className="text-[#7C3AED]">Odoo 17</span>
+          </h1>
+          <p className="text-xs sm:text-sm text-[#64748B] max-w-md mx-auto">
+            Conteo físico colaborativo en tiempo real para almacenes y piso de venta en multicompañía.
+          </p>
+
+          {/* Botón PWA install */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
+            <PWAInstallButton />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Supabase Cloud Realtime Activo (sepeawvmamugivoptfyf)
+            </span>
+          </div>
+        </div>
+
+        {/* 2. ESTADO INICIAL LIMPIO: RESUMEN DE CONEXIÓN ODOO 17 (SIN EXPONER CREDENCIALES) */}
+        <div className="p-3.5 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 shrink-0">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-[#0F172A] truncate">
+                  Conexión JSON-RPC Odoo 17
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Conectado
+                </span>
+              </div>
+              <p className="text-[11px] text-[#64748B] truncate font-mono">
+                {db} • {username}
+              </p>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={handleJoinSession}
-            disabled={joinPin.length !== 4 || isCheckingPin}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white font-bold text-sm shadow-md transition cursor-pointer"
+            onClick={() => setShowOdooConfig((prev) => !prev)}
+            className="p-1.5 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0] text-xs font-medium cursor-pointer transition shrink-0 flex items-center gap-1"
+            title="Revisar o cambiar credenciales Odoo"
           >
-            {isCheckingPin ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                <span>Verificando sesión en Supabase...</span>
-              </>
-            ) : (
-              <>
-                <span>Conectar y Sincronizar en Vivo</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
+            <Settings className="w-3 h-3 text-[#7C3AED]" />
+            <span>{showOdooConfig ? 'Ocultar' : 'Editar'}</span>
           </button>
         </div>
-      )}
 
-      {/* CONTENIDO MODO: CREAR SESIÓN (CONEXIÓN ODOO 17) */}
-      {sessionMode === 'create' && (
-        <form onSubmit={handleAuthenticate} className="space-y-4">
-          <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-4">
+        {/* 3. ACORDEÓN / CONTENEDOR COLAPSABLE DE CREDENCIALES (CERRADO POR DEFECTO) */}
+        {showOdooConfig && (
+          <form
+            onSubmit={handleAuthenticate}
+            className="p-5 rounded-2xl bg-white border border-purple-200 shadow-md space-y-4 animate-in fade-in slide-in-from-top-2"
+          >
             <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
               <span className="text-xs font-bold uppercase tracking-wider text-[#7C3AED] flex items-center gap-1.5">
                 <Server className="w-4 h-4" />
-                1. Conexión JSON-RPC Odoo 17
+                Configuración de Servidor y Credenciales Odoo 17
               </span>
-
-              {isAuthenticated ? (
-                <span className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Conectado
-                </span>
-              ) : (
-                <span className="text-[11px] text-[#64748B] font-mono">Multicompañía</span>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowOdooConfig(false)}
+                className="text-xs text-[#64748B] hover:text-[#0F172A] cursor-pointer"
+              >
+                Cerrar
+              </button>
             </div>
 
             {/* URL del Servidor Odoo con Sanitización en vivo */}
@@ -835,11 +780,11 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
             </div>
 
             {/* Botón de Autenticación */}
-            <div className="pt-1">
+            <div className="pt-1 flex items-center gap-2">
               <button
                 type="submit"
                 disabled={isLoadingAuth}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 text-[#0F172A] font-semibold text-xs transition cursor-pointer border border-[#E2E8F0] shadow-xs"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 text-[#0F172A] font-semibold text-xs transition cursor-pointer border border-[#E2E8F0] shadow-xs"
               >
                 {isLoadingAuth ? (
                   <>
@@ -849,23 +794,187 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                 ) : (
                   <>
                     <ShieldCheck className="w-4 h-4 text-[#7C3AED]" />
-                    <span>{isAuthenticated ? 'Re-verificar Credenciales Odoo' : 'Conectar con Servidor Odoo'}</span>
+                    <span>Re-verificar y Guardar Credenciales</span>
                   </>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setShowOdooConfig(false)}
+                className="py-2.5 px-4 rounded-xl border border-[#E2E8F0] hover:bg-slate-50 text-xs text-[#64748B] font-medium transition cursor-pointer"
+              >
+                Listo
+              </button>
             </div>
-          </div>
+          </form>
+        )}
 
-          {/* PARTE 2: COMPAÑÍA, UBICACIÓN Y CATEGORÍA (Si está autenticado) */}
-          {isAuthenticated && (
-            <div className="p-5 rounded-2xl bg-white border border-purple-200 shadow-md space-y-4 animate-in fade-in">
+        {/* Selector de Modo: Crear Sesión vs Unirse con PIN */}
+        <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-slate-100 border border-[#E2E8F0]">
+          <button
+            type="button"
+            onClick={() => {
+              setSessionMode('create');
+              setAuthError(null);
+            }}
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              sessionMode === 'create'
+                ? 'bg-[#7C3AED] text-white shadow-sm'
+                : 'text-[#64748B] hover:text-[#0F172A]'
+            }`}
+          >
+            <Radio className="w-4 h-4" />
+            <span>Crear Sesión (Lead)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSessionMode('join');
+              setAuthError(null);
+            }}
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              sessionMode === 'join'
+                ? 'bg-[#7C3AED] text-white shadow-sm'
+                : 'text-[#64748B] hover:text-[#0F172A]'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Unirse con PIN</span>
+          </button>
+        </div>
+
+        {/* Nombre del Auditor (Común a ambos modos) */}
+        <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-3">
+          <label className="block text-xs font-bold text-[#0F172A]">
+            Nombre o Código del Auditor:
+          </label>
+          <div className="relative">
+            <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+            <input
+              type="text"
+              value={auditorName}
+              onChange={(e) => setAuditorName(e.target.value)}
+              placeholder="Ej: Carlos Gómez / Piso A"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-1 focus:ring-[#7C3AED] text-sm font-medium text-[#0F172A] placeholder-[#94A3B8] outline-none"
+            />
+          </div>
+        </div>
+
+        {/* CONTENIDO MODO: UNIRSE A SESIÓN POR PIN */}
+        {sessionMode === 'join' && (
+          <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-5">
+            <div className="text-center space-y-1">
+              <h2 className="text-base font-bold text-[#0F172A]">Ingresa el PIN de la Auditoría</h2>
+              <p className="text-xs text-[#64748B]">
+                Solicita el código de 4 dígitos al supervisor o creador de la sesión.
+              </p>
+            </div>
+
+            <div className="max-w-xs mx-auto">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                value={joinPin}
+                onChange={(e) => {
+                  setJoinPin(e.target.value.replace(/\D/g, ''));
+                  if (sessionNotFoundState) setSessionNotFoundState(null);
+                  if (authError) setAuthError(null);
+                }}
+                placeholder="0000"
+                disabled={isCheckingPin}
+                className="w-full text-center text-4xl font-mono font-black tracking-widest py-3 rounded-2xl bg-white border-2 border-[#7C3AED] focus:border-[#6D28D9] focus:ring-4 focus:ring-[#7C3AED]/20 text-[#0F172A] outline-none disabled:opacity-50"
+              />
+            </div>
+
+            <div className="flex items-center justify-center gap-2 -mt-2">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-[#64748B] hover:text-[#0F172A] transition">
+                <input
+                  type="checkbox"
+                  checked={autoCreateOnJoin}
+                  onChange={(e) => setAutoCreateOnJoin(e.target.checked)}
+                  className="rounded bg-white border-[#CBD5E1] text-[#7C3AED] focus:ring-[#7C3AED] cursor-pointer"
+                />
+                <span>Crear sesión automáticamente si no existe en Supabase</span>
+              </label>
+            </div>
+
+            {/* Tarjeta de Sesión No Encontrada con Opción de Creación */}
+            {sessionNotFoundState && (
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-800 text-xs space-y-3 animate-in fade-in">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block text-amber-900 font-bold">
+                      La sesión con PIN {sessionNotFoundState.pin} no existe en Supabase.
+                    </strong>
+                    <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                      Aún no ha sido iniciada por otro auditor o el PIN es incorrecto. Puedes crearla ahora con este mismo PIN.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isCreatingFromNotFound}
+                    onClick={() => handleCreateSessionWithPin(sessionNotFoundState.pin)}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold text-xs cursor-pointer shadow-sm transition text-center flex items-center justify-center gap-2"
+                  >
+                    {isCreatingFromNotFound ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Guardando en Supabase (UPSERT)...</span>
+                      </>
+                    ) : (
+                      <span>Crear Sesión con PIN {sessionNotFoundState.pin}</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isCreatingFromNotFound}
+                    onClick={() => setSessionNotFoundState(null)}
+                    className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-100 text-[#64748B] text-xs cursor-pointer transition border border-[#E2E8F0]"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleJoinSession}
+              disabled={joinPin.length !== 4 || isCheckingPin}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white font-bold text-sm shadow-md transition cursor-pointer"
+            >
+              {isCheckingPin ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  <span>Verificando sesión en Supabase...</span>
+                </>
+              ) : (
+                <>
+                  <span>Conectar y Sincronizar en Vivo</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* CONTENIDO MODO: CREAR SESIÓN (OPCIONES DE ALMACÉN Y AUDITORÍA) */}
+        {sessionMode === 'create' && (
+          <div className="space-y-4">
+            {/* PARTE 2: COMPAÑÍA, UBICACIÓN Y CATEGORÍA (Inmediatamente accesibles y limpias) */}
+            <div className="p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4 animate-in fade-in">
               <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
                 <span className="text-xs font-bold uppercase tracking-wider text-[#7C3AED] flex items-center gap-1.5">
                   <Building2 className="w-4 h-4" />
-                  2. Filtros de Almacén y Auditoría
+                  Filtros de Almacén y Auditoría
                 </span>
-                <span className="text-xs text-[#64748B] font-semibold">
-                  Multicompañía
+                <span className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  Multicompañía Odoo 17
                 </span>
               </div>
 
@@ -972,9 +1081,8 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
                 )}
               </button>
             </div>
-          )}
-        </form>
-      )}
+          </div>
+        )}
 
       {/* Mensaje de Error si ocurre */}
       {authError && (
@@ -1150,6 +1258,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 };
