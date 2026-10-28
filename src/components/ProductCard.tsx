@@ -270,41 +270,77 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const isSurplus = difference > 0;
   const isDeficit = difference < 0;
 
+  // Estados y Contraste de Auditoría:
+  // 1. Sin Auditar: Sin marca de tiempo de auditoría previa y conteo en 0
+  const isUnaudited = !item.lastAuditedAt && (item.countedQuantity === 0 || item.countedQuantity === undefined) && (!item.countHistory || item.countHistory.length === 0);
+  // 2. Conteo Correcto / Físico Registrado: Ha sido auditado y la diferencia es 0
+  const isCountCorrect = !isUnaudited && isExact;
+  // 3. Con Diferencia (Dif. DQ): Registrado y con diferencia diferente de 0
+  const hasDiscrepancy = !isUnaudited && !isExact;
+
+  const stateBorderClass = isFocused
+    ? 'border-[#2563EB] ring-4 ring-[#2563EB]/40 shadow-2xl shadow-blue-950/80 scale-[1.01]'
+    : hasDiscrepancy
+    ? 'border-[#334155] border-t-4 border-t-[#EF4444] shadow-md shadow-slate-950/40'
+    : isCountCorrect
+    ? 'border-[#334155] border-t-4 border-t-[#10B981] shadow-md shadow-slate-950/40'
+    : 'border-[#334155] border-t-4 border-t-[#475569] shadow-md shadow-slate-950/40';
+
   return (
     <div
       ref={cardRef}
       style={{ scrollMarginTop: '120px' }}
-      className={`relative rounded-2xl bg-slate-900/90 border transition-all duration-300 overflow-hidden shadow-lg scroll-mt-[120px] ${
-        isFocused
-          ? 'border-emerald-400 ring-4 ring-emerald-500/50 shadow-2xl shadow-emerald-950/90 scale-[1.02] bg-slate-900/95 animate-pulse'
-          : 'border-slate-800 hover:border-slate-700/80 shadow-slate-950/50'
-      }`}
+      className={`relative rounded-2xl bg-[#1E293B] border transition-all duration-300 overflow-hidden shadow-lg scroll-mt-[120px] ${stateBorderClass}`}
     >
-      {/* Indicador superior de estado de sincronización */}
-      <div className="flex items-center justify-between px-3.5 pt-3 pb-1 border-b border-slate-800/60 text-[11px]">
-        <div className="flex items-center gap-1.5 font-mono text-slate-400">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-          <span className="font-semibold text-slate-300">ID #{item.id}</span>
+      {/* Indicador superior de estado de sincronización y estado visual */}
+      <div className="flex items-center justify-between px-3.5 pt-3 pb-1.5 border-b border-[#334155]/70 text-[11px]">
+        <div className="flex items-center gap-1.5 font-mono text-[#94A3B8]">
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            hasDiscrepancy
+              ? 'bg-[#EF4444]'
+              : isCountCorrect
+              ? 'bg-[#10B981]'
+              : 'bg-[#475569]'
+          }`}></span>
+          <span className="font-semibold text-[#F8FAFC]">ID #{item.id}</span>
           {item.locationName && (
-            <span className="truncate max-w-[130px] text-slate-500" title={item.locationName}>
+            <span className="truncate max-w-[130px] text-[#94A3B8]" title={item.locationName}>
               • {item.locationName.split('/').pop()}
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Badge de Estado Visual Claro */}
+          {hasDiscrepancy && (
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-950/60 text-[#EF4444] border border-rose-500/40">
+              Dif: {difference > 0 ? `+${difference}` : difference}
+            </span>
+          )}
+          {isCountCorrect && (
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-950/60 text-[#10B981] border border-emerald-500/40 flex items-center gap-1">
+              <Check className="w-3 h-3 stroke-[3]" />
+              <span>Correcto</span>
+            </span>
+          )}
+          {isUnaudited && (
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-900/80 text-[#94A3B8] border border-[#334155]">
+              Sin Auditar
+            </span>
+          )}
+
           {/* Botón de Historial de Conteos Parciales */}
           <button
             type="button"
             onClick={() => setShowHistoryModal(true)}
             className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg border transition cursor-pointer ${
               item.countHistory && item.countHistory.length > 0
-                ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-300 hover:bg-indigo-900/80'
-                : 'bg-slate-800/80 border-slate-700/60 text-slate-400 hover:text-slate-200'
+                ? 'bg-blue-950/60 border-blue-500/40 text-blue-300 hover:bg-blue-900/60'
+                : 'bg-slate-900/80 border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC]'
             }`}
             title="Ver desglose de conteos parciales"
           >
-            <History className="w-3 h-3 text-indigo-400" />
+            <History className="w-3 h-3 text-blue-400" />
             <span>Historial{item.countHistory && item.countHistory.length > 0 ? ` (${item.countHistory.length})` : ''}</span>
           </button>
 
@@ -315,13 +351,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </span>
           )}
           {item.lastAuditedBy && (
-            <span className="flex items-center gap-1 text-slate-400">
+            <span className="flex items-center gap-1 text-[#94A3B8]">
               <User className="w-3 h-3 text-slate-500" />
               <span className="truncate max-w-[90px]">{item.lastAuditedBy}</span>
             </span>
           )}
           {isSavedRecently && (
-            <span className="flex items-center gap-1 text-emerald-400 animate-pulse font-medium">
+            <span className="flex items-center gap-1 text-[#10B981] animate-pulse font-medium">
               <Check className="w-3 h-3" />
               Guardado
             </span>
@@ -332,23 +368,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       <div className="p-3.5 space-y-3">
         {/* Cabecera del Producto: Nombre y Códigos */}
         <div>
-          <h3 className="text-sm font-bold text-slate-100 leading-snug line-clamp-2">
+          <h3 className="text-sm font-bold text-[#F8FAFC] leading-snug line-clamp-2">
             {item.productName}
           </h3>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
             {item.defaultCode && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 font-mono text-indigo-300 text-[11px] font-semibold">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900 border border-[#334155] font-mono text-blue-300 text-[11px] font-semibold">
                 Ref: {item.defaultCode}
               </span>
             )}
             {item.barcode && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-800/80 border border-slate-700/80 font-mono text-slate-300 text-[11px]">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/80 border border-[#334155]/80 font-mono text-[#94A3B8] text-[11px]">
                 EAN: {item.barcode}
               </span>
             )}
             {item.categName && (
-              <span className="text-[11px] text-slate-400 px-1.5 py-0.5 rounded bg-slate-800/40">
+              <span className="text-[11px] text-[#94A3B8] px-1.5 py-0.5 rounded bg-slate-900/60 border border-[#334155]/40">
                 {item.categName}
               </span>
             )}
@@ -358,26 +394,26 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {item.countHistory && item.countHistory.length > 0 && (
             <div
               onClick={() => setShowHistoryModal(true)}
-              className="mt-2 flex items-center justify-between p-1.5 px-2.5 rounded-lg bg-indigo-950/40 border border-indigo-500/30 text-[11px] font-mono text-indigo-300 hover:bg-indigo-900/40 transition cursor-pointer"
+              className="mt-2 flex items-center justify-between p-1.5 px-2.5 rounded-lg bg-blue-950/40 border border-blue-500/30 text-[11px] font-mono text-blue-300 hover:bg-blue-900/40 transition cursor-pointer"
               title="Haz clic para ver el desglose completo de aportes"
             >
               <div className="flex items-center gap-1.5 min-w-0 truncate">
-                <span className="text-slate-400 font-sans font-medium text-[10px]">Historial:</span>
+                <span className="text-[#94A3B8] font-sans font-medium text-[10px]">Historial:</span>
                 <span className="truncate">{item.countHistory.map(n => n >= 0 ? `+${n}` : `${n}`).join(' ')}</span>
               </div>
-              <span className="font-bold text-indigo-200 shrink-0 ml-2">= Total {currentCounted}</span>
+              <span className="font-bold text-blue-200 shrink-0 ml-2">= Total {currentCounted}</span>
             </div>
           )}
         </div>
 
         {/* Métricas Principales: QS (Sistema), QC (Contado) y DQ (Diferencia) */}
-        <div className="grid grid-cols-3 gap-2 p-2 rounded-xl bg-slate-950/70 border border-slate-800/80">
+        <div className="grid grid-cols-3 gap-2 p-2 rounded-xl bg-[#0F172A]/80 border border-[#334155]">
           {/* QS: Sistema (inmovilizado si is_locked está activo) */}
           <div
             className={`flex flex-col items-center justify-center p-1.5 rounded-lg border transition-colors ${
               item.isLocked
                 ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
-                : 'bg-slate-900/60 border-transparent text-slate-400'
+                : 'bg-slate-900/60 border-transparent text-[#94A3B8]'
             }`}
             title={
               item.isLocked
@@ -387,14 +423,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           >
             <div className="flex items-center gap-1">
               <span className={`text-[10px] font-medium uppercase tracking-wider ${
-                item.isLocked ? 'text-amber-300 font-bold' : 'text-slate-400'
+                item.isLocked ? 'text-amber-300 font-bold' : 'text-[#94A3B8]'
               }`}>
                 QS (Sistema)
               </span>
               {item.isLocked && <Lock className="w-2.5 h-2.5 text-amber-400" />}
             </div>
             <span className={`text-base font-extrabold mt-0.5 ${
-              item.isLocked ? 'text-amber-200 font-mono' : 'text-slate-200'
+              item.isLocked ? 'text-amber-200 font-mono' : 'text-[#F8FAFC]'
             }`}>
               {item.quantity}
             </span>
@@ -404,16 +440,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <button
             type="button"
             onClick={() => openBatchModal('add')}
-            className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-indigo-950/40 hover:bg-indigo-900/60 active:scale-95 border border-indigo-500/30 hover:border-indigo-400 transition cursor-pointer select-none group text-left"
+            className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-blue-950/40 hover:bg-blue-900/60 active:scale-95 border border-blue-500/40 hover:border-blue-400 transition cursor-pointer select-none group text-left shadow-xs"
             title="Toca para ingresar cantidad por lote o corregir total"
           >
             <div className="flex items-center gap-1">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-indigo-300">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-blue-300">
                 QC (Físico)
               </span>
-              <Plus className="w-2.5 h-2.5 text-indigo-400 opacity-70 group-hover:opacity-100" />
+              <Plus className="w-2.5 h-2.5 text-blue-400 opacity-70 group-hover:opacity-100" />
             </div>
-            <span className="text-base font-extrabold text-white mt-0.5 group-hover:text-indigo-200">
+            <span className="text-base font-extrabold text-[#F8FAFC] mt-0.5 group-hover:text-blue-200">
               {currentCounted}
             </span>
           </button>
@@ -421,19 +457,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {/* DQ: Diferencia Codificada por Color */}
           <div
             className={`flex flex-col items-center justify-center p-1.5 rounded-lg border ${
-              isExact
-                ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400'
-                : isSurplus
-                ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
-                : 'bg-rose-950/40 border-rose-500/50 text-rose-400'
+              isCountCorrect
+                ? 'bg-emerald-950/40 border-emerald-500/40 text-[#10B981]'
+                : hasDiscrepancy
+                ? 'bg-rose-950/40 border-rose-500/50 text-[#EF4444]'
+                : 'bg-slate-900/60 border-[#334155]/60 text-[#94A3B8]'
             }`}
           >
             <div className="flex items-center gap-0.5">
               <span className="text-[10px] font-medium uppercase tracking-wider">
                 DQ (Dif.)
               </span>
-              {isSurplus && <ArrowUpRight className="w-3 h-3 text-emerald-400" />}
-              {isDeficit && <ArrowDownRight className="w-3 h-3 text-rose-400" />}
+              {isSurplus && <ArrowUpRight className="w-3 h-3 text-[#10B981]" />}
+              {isDeficit && <ArrowDownRight className="w-3 h-3 text-[#EF4444]" />}
             </div>
             <span className="text-base font-extrabold mt-0.5">
               {isSurplus ? `+${difference}` : difference}
@@ -443,7 +479,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Zona de Edición Rápida de QC: Input numérico directo + Botón '+' para ingreso por lote */}
         <div className="pt-1">
-          <div className="text-[11px] font-medium text-slate-400 mb-1 flex items-center justify-between">
+          <div className="text-[11px] font-medium text-[#94A3B8] mb-1 flex items-center justify-between">
             <span>Ajuste de Conteo Físico:</span>
             <span className="text-[10px] text-slate-500">Toca '+' para suma por lote</span>
           </div>
@@ -453,11 +489,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <button
               type="button"
               onClick={() => increment(-1)}
-              className="px-3.5 flex items-center justify-center min-h-[46px] rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 font-bold transition cursor-pointer select-none"
+              className="px-3.5 flex items-center justify-center min-h-[46px] rounded-xl bg-slate-900 hover:bg-slate-700/80 active:scale-95 border border-[#334155] text-[#EF4444] font-bold transition cursor-pointer select-none"
               aria-label="Restar 1 unidad"
               title="Restar 1 unidad"
             >
-              <Minus className="w-5 h-5 text-rose-400" />
+              <Minus className="w-5 h-5 text-[#EF4444]" />
             </button>
 
             {/* Input Editable Directo para números enteros o decimales (inputMode="decimal") */}
@@ -469,7 +505,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 onChange={handleInputChange}
                 onBlur={handleInputBlur}
                 onKeyDown={handleKeyDown}
-                className="w-full h-[46px] rounded-xl bg-slate-950 border-2 border-indigo-500/60 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 text-center font-mono text-xl font-bold text-white transition outline-none"
+                className="w-full h-[46px] rounded-xl bg-[#0F172A] border-2 border-[#2563EB] focus:border-blue-400 focus:ring-2 focus:ring-[#2563EB]/25 text-center font-mono text-xl font-bold text-[#F8FAFC] transition outline-none"
                 placeholder="0"
                 autoComplete="off"
                 autoCorrect="off"
@@ -482,19 +518,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <button
               type="button"
               onClick={() => openBatchModal('add')}
-              className="flex-1 flex items-center justify-center gap-1.5 min-h-[46px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold transition cursor-pointer select-none shadow-md shadow-indigo-950"
+              className="flex-1 flex items-center justify-center gap-1.5 min-h-[46px] px-3 rounded-xl bg-[#2563EB] hover:bg-blue-500 active:scale-95 text-white font-bold transition cursor-pointer select-none shadow-md shadow-blue-950/60"
               aria-label="Ingreso rápido por lote"
               title="Abre el cuadro de diálogo para sumar por lote o corregir"
             >
               <Plus className="w-5 h-5" />
-              <span className="text-xs sm:text-sm">Lote</span>
+              <span className="text-xs sm:text-sm font-bold">Lote</span>
             </button>
 
             {/* Acceso rápido +1 unitario directo */}
             <button
               type="button"
               onClick={() => increment(1)}
-              className="px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-indigo-300 font-mono text-xs font-bold transition cursor-pointer"
+              className="px-2.5 rounded-xl bg-slate-900 hover:bg-slate-700/80 active:scale-95 border border-[#334155] text-blue-300 font-mono text-xs font-bold transition cursor-pointer"
               title="Sumar 1 unidad directa (+1)"
             >
               +1
@@ -503,7 +539,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
 
         {/* Barra inferior: Evidencia Fotográfica y Detalles */}
-        <div className="pt-1 flex items-center justify-between border-t border-slate-800/60 text-xs">
+        <div className="pt-1 flex items-center justify-between border-t border-[#334155]/60 text-xs">
           {/* Captura de foto nativa */}
           <div className="flex items-center gap-2">
             <input
@@ -518,10 +554,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
             <label
               htmlFor={`photo-input-${item.id}`}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-300 hover:text-white transition cursor-pointer text-xs"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-700/80 active:scale-95 border border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC] transition cursor-pointer text-xs"
               title="Capturar foto de evidencia con la cámara"
             >
-              <Camera className="w-3.5 h-3.5 text-indigo-400" />
+              <Camera className="w-3.5 h-3.5 text-blue-400" />
               <span>{item.photoUrl ? 'Cambiar Foto' : 'Foto Evidencia'}</span>
             </label>
 
@@ -533,7 +569,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition active:scale-95 cursor-pointer select-none ${
                   item.isLocked
                     ? 'bg-amber-950/70 border-amber-500/70 text-amber-300 hover:bg-amber-900/80 shadow-xs shadow-amber-950/50'
-                    : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-slate-200'
+                    : 'bg-slate-900 hover:bg-slate-700/80 border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC]'
                 }`}
                 title={
                   item.isLocked
@@ -560,7 +596,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowPhotoModal(true)}
-                  className="flex items-center gap-1 px-2 py-1 rounded bg-indigo-950/60 border border-indigo-800/50 text-indigo-300 hover:text-white text-[11px] cursor-pointer"
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-blue-950/60 border border-blue-800/50 text-blue-300 hover:text-white text-[11px] cursor-pointer"
                 >
                   <Eye className="w-3 h-3" />
                   <span>Ver Foto</span>
@@ -594,17 +630,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           onClick={() => setShowPhotoModal(false)}
         >
           <div
-            className="relative max-w-sm w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl p-4 text-center"
+            className="relative max-w-sm w-full bg-[#1E293B] border border-[#334155] rounded-2xl overflow-hidden shadow-2xl p-4 text-center"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-left">
+            <div className="flex items-center justify-between pb-3 border-b border-[#334155] text-left">
               <div>
-                <h4 className="text-sm font-bold text-white line-clamp-1">{item.productName}</h4>
-                <p className="text-xs text-slate-400">Evidencia de Auditoría Quant #{item.id}</p>
+                <h4 className="text-sm font-bold text-[#F8FAFC] line-clamp-1">{item.productName}</h4>
+                <p className="text-xs text-[#94A3B8]">Evidencia de Auditoría Quant #{item.id}</p>
               </div>
               <button
                 onClick={() => setShowPhotoModal(false)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                className="p-1.5 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] hover:text-[#F8FAFC] cursor-pointer"
               >
                 ✕
               </button>
@@ -618,7 +654,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               />
             </div>
 
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-[#94A3B8]">
               {item.lastAuditedBy ? `Auditor: ${item.lastAuditedBy}` : 'Auditoría local'}
             </div>
           </div>
@@ -628,36 +664,36 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Modal/Cuadro de Diálogo Numérico Rápido para Ingreso por Lote configurado como Bottom Sheet */}
       {showBatchModal && (
         <div
-          className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/45 backdrop-blur-[2px] p-0 sm:p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in"
           onClick={() => setShowBatchModal(false)}
         >
           <div
-            className="relative w-full max-w-2xl mx-auto bg-slate-900 border-t-2 border-x-2 sm:border-2 border-indigo-500/50 rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[58vh] flex flex-col overflow-hidden text-slate-100 animate-in slide-in-from-bottom duration-300 pb-safe"
+            className="relative w-full max-w-2xl mx-auto bg-[#1E293B] border-t-2 border-x-2 sm:border-2 border-[#2563EB]/70 rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[58vh] flex flex-col overflow-hidden text-[#F8FAFC] animate-in slide-in-from-bottom duration-300 pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Tirador visual de Bottom Sheet para dispositivos táctiles */}
-            <div className="w-12 h-1.5 rounded-full bg-slate-700/80 mx-auto mt-2.5 mb-0.5 sm:hidden shrink-0"></div>
+            <div className="w-12 h-1.5 rounded-full bg-slate-600 mx-auto mt-2.5 mb-0.5 sm:hidden shrink-0"></div>
 
             {/* 1. Cabecera fija superior */}
-            <div className="shrink-0 px-4 pt-2.5 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 border-b border-slate-800/90 bg-slate-900/95 flex items-start justify-between gap-2">
+            <div className="shrink-0 px-4 pt-2.5 pb-2.5 sm:px-5 sm:pt-4 sm:pb-3 border-b border-[#334155] bg-[#1E293B] flex items-start justify-between gap-2">
               <div className="space-y-0.5 min-w-0 pr-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-950/80 border border-indigo-500/40 text-indigo-400 font-mono text-[10px] font-bold">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-950/80 border border-[#2563EB]/50 text-blue-300 font-mono text-[10px] font-bold">
                     <Layers className="w-2.5 h-2.5" />
                     Quant #{item.id}
                   </span>
                   {item.defaultCode && (
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-[#94A3B8] bg-[#0F172A] border border-[#334155] px-1.5 py-0.5 rounded">
                       Ref: {item.defaultCode}
                     </span>
                   )}
                   {item.barcode && (
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-[#94A3B8] bg-[#0F172A] border border-[#334155] px-1.5 py-0.5 rounded">
                       EAN: {item.barcode}
                     </span>
                   )}
                 </div>
-                <h4 className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-1">
+                <h4 className="text-xs sm:text-sm font-bold text-[#F8FAFC] leading-snug line-clamp-1">
                   {item.productName}
                 </h4>
               </div>
@@ -665,7 +701,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <button
                 type="button"
                 onClick={() => setShowBatchModal(false)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer transition shrink-0"
+                className="p-1.5 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] hover:text-[#F8FAFC] cursor-pointer transition shrink-0 border border-[#334155]"
                 aria-label="Cerrar modal"
               >
                 <X className="w-4 h-4" />
@@ -679,7 +715,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               className="flex-1 overflow-y-auto px-4 py-3 sm:px-5 sm:py-3.5 space-y-2.5 sm:space-y-3"
             >
               {/* Conmutador de Modo: Sumar al Acumulado vs Reemplazar / Corregir Total */}
-              <div className="p-1 rounded-xl bg-slate-950 border border-slate-800 flex gap-1">
+              <div className="p-1 rounded-xl bg-[#0F172A] border border-[#334155] flex gap-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -688,8 +724,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   }}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer select-none ${
                     batchMode === 'add'
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#2563EB] text-white shadow-md shadow-blue-950/60'
+                      : 'text-[#94A3B8] hover:text-[#F8FAFC]'
                   }`}
                 >
                   <Plus className="w-3.5 h-3.5 shrink-0" />
@@ -705,7 +741,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 sm:py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer select-none ${
                     batchMode === 'replace'
                       ? 'bg-amber-600 text-white shadow-md shadow-amber-950'
-                      : 'text-slate-400 hover:text-slate-200'
+                      : 'text-[#94A3B8] hover:text-[#F8FAFC]'
                   }`}
                 >
                   <Edit3 className="w-3.5 h-3.5 shrink-0" />
@@ -714,18 +750,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </div>
 
               {/* Información del Estado Actual en 1 fila compacta */}
-              <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-slate-950/70 border border-slate-800/80 text-center">
+              <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-[#0F172A]/80 border border-[#334155] text-center">
                 <div className="flex flex-col items-center justify-center">
-                  <span className="text-[9px] uppercase tracking-wider text-slate-400">QS (Sistema)</span>
-                  <span className="font-extrabold text-slate-200 text-xs sm:text-sm">{item.quantity} uds.</span>
+                  <span className="text-[9px] uppercase tracking-wider text-[#94A3B8]">QS (Sistema)</span>
+                  <span className="font-extrabold text-[#F8FAFC] text-xs sm:text-sm">{item.quantity} uds.</span>
                 </div>
-                <div className="flex flex-col items-center justify-center border-x border-slate-800/80 px-1">
-                  <span className="text-[9px] uppercase tracking-wider text-indigo-400 font-medium">QC Actual</span>
-                  <span className="font-black text-indigo-300 text-xs sm:text-sm">{parseFloat(localQC) || 0} uds.</span>
+                <div className="flex flex-col items-center justify-center border-x border-[#334155] px-1">
+                  <span className="text-[9px] uppercase tracking-wider text-blue-400 font-medium">QC Actual</span>
+                  <span className="font-black text-blue-300 text-xs sm:text-sm">{parseFloat(localQC) || 0} uds.</span>
                 </div>
                 <div className="flex flex-col items-center justify-center">
-                  <span className="text-[9px] uppercase tracking-wider text-slate-400">Operación</span>
-                  <span className={`font-bold text-[10px] sm:text-xs truncate ${batchMode === 'add' ? 'text-indigo-400' : 'text-amber-400'}`}>
+                  <span className="text-[9px] uppercase tracking-wider text-[#94A3B8]">Operación</span>
+                  <span className={`font-bold text-[10px] sm:text-xs truncate ${batchMode === 'add' ? 'text-blue-400' : 'text-amber-400'}`}>
                     {batchMode === 'add' ? '+ Suma Lote' : 'Sustitución'}
                   </span>
                 </div>
@@ -734,14 +770,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               {/* Formulario de Entrada */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <label htmlFor={`batch-input-${item.id}`} className="font-medium text-slate-300 text-[11px] sm:text-xs">
+                  <label htmlFor={`batch-input-${item.id}`} className="font-medium text-[#F8FAFC] text-[11px] sm:text-xs">
                     {batchMode === 'add' ? 'Cantidad a sumar (+):' : 'Nueva cantidad total:'}
                   </label>
                   {batchInputValue && (
                     <button
                       type="button"
                       onClick={() => setBatchInputValue('')}
-                      className="text-[10px] sm:text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer"
+                      className="text-[10px] sm:text-[11px] text-[#EF4444] hover:text-red-300 cursor-pointer"
                     >
                       Limpiar
                     </button>
@@ -764,9 +800,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     autoComplete="off"
                     autoCorrect="off"
                     spellCheck="false"
-                    className={`w-full py-2.5 sm:py-3 px-3 rounded-xl bg-slate-950 border-2 text-center font-mono text-2xl sm:text-3xl font-black text-white outline-none transition ${
+                    className={`w-full py-2.5 sm:py-3 px-3 rounded-xl bg-[#0F172A] border-2 text-center font-mono text-2xl sm:text-3xl font-black text-[#F8FAFC] outline-none transition ${
                       batchMode === 'add'
-                        ? 'border-indigo-500/70 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20'
+                        ? 'border-[#2563EB] focus:border-blue-400 focus:ring-2 focus:ring-[#2563EB]/25'
                         : 'border-amber-500/70 focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20'
                     }`}
                   />
@@ -775,7 +811,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
               {/* Atajos Rápidos Compactos (+1, +5, +10, +20, +50, +100) */}
               <div className="space-y-1">
-                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-wider text-[#94A3B8] font-semibold flex items-center justify-between">
                   <span>{batchMode === 'add' ? 'Atajos para sumar:' : 'Atajos numéricos:'}</span>
                   <span className="text-[9px] text-slate-500">Un toque para agregar</span>
                 </div>
@@ -785,7 +821,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       key={preset}
                       type="button"
                       onClick={() => applyPreset(preset)}
-                      className="py-1 px-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 font-mono text-xs font-bold text-slate-200 hover:text-white transition cursor-pointer select-none text-center"
+                      className="py-1 px-0.5 rounded-lg bg-[#0F172A] hover:bg-slate-800 active:scale-95 border border-[#334155] font-mono text-xs font-bold text-[#F8FAFC] transition cursor-pointer select-none text-center"
                     >
                       +{preset}
                     </button>
@@ -796,12 +832,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               {/* Tarjeta de Cálculo y Fórmula en Tiempo Real */}
               <div className={`p-2 sm:p-2.5 rounded-xl border text-[11px] sm:text-xs space-y-1 ${
                 batchMode === 'add'
-                  ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-200'
+                  ? 'bg-blue-950/30 border-[#2563EB]/40 text-blue-200'
                   : 'bg-amber-950/30 border-amber-500/30 text-amber-200'
               }`}>
-                <div className="flex items-center justify-between text-[10px] text-slate-400">
-                  <span className="flex items-center gap-1 font-medium text-slate-300">
-                    <Calculator className="w-3 h-3 text-indigo-400" />
+                <div className="flex items-center justify-between text-[10px] text-[#94A3B8]">
+                  <span className="flex items-center gap-1 font-medium text-[#F8FAFC]">
+                    <Calculator className="w-3 h-3 text-[#2563EB]" />
                     <span>Fórmula en tiempo real:</span>
                   </span>
                   <span className="font-mono">
@@ -809,12 +845,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   </span>
                 </div>
 
-                <div className="text-xs sm:text-sm font-mono font-bold text-white flex items-center justify-between pt-0.5 border-t border-slate-800/80">
+                <div className="text-xs sm:text-sm font-mono font-bold text-[#F8FAFC] flex items-center justify-between pt-0.5 border-t border-[#334155]">
                   {batchMode === 'add' ? (
                     <>
                       <span>{parseSafeFloat(localQC)} + {parseSafeFloat(batchInputValue)}</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                      <span className="text-sm sm:text-base font-black text-indigo-300">
+                      <ArrowRight className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="text-sm sm:text-base font-black text-blue-300">
                         {Math.max(0, Math.round((parseSafeFloat(localQC) + parseSafeFloat(batchInputValue)) * 1000) / 1000)} uds.
                       </span>
                     </>
@@ -829,7 +865,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   )}
                 </div>
 
-                <div className="text-[10px] text-slate-400 flex items-center justify-between pt-0.5">
+                <div className="text-[10px] text-[#94A3B8] flex items-center justify-between pt-0.5">
                   <span>Diferencia vs Sistema ({item.quantity}):</span>
                   {(() => {
                     const finalQC = batchMode === 'add'
@@ -839,10 +875,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     return (
                       <span className={`font-mono font-bold ${
                         finalDiff === 0
-                          ? 'text-emerald-400'
+                          ? 'text-[#10B981]'
                           : finalDiff > 0
-                          ? 'text-emerald-400'
-                          : 'text-rose-400'
+                          ? 'text-[#10B981]'
+                          : 'text-[#EF4444]'
                       }`}>
                         {finalDiff > 0 ? `+${finalDiff}` : finalDiff} uds.
                       </span>
@@ -853,11 +889,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </form>
 
             {/* 3. Botones de acción fijados permanentemente en la parte inferior */}
-            <div className="shrink-0 px-4 py-2.5 sm:px-5 sm:py-3 bg-slate-950/95 border-t border-slate-800 flex items-center gap-2">
+            <div className="shrink-0 px-4 py-2.5 sm:px-5 sm:py-3 bg-[#0F172A] border-t border-[#334155] flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowBatchModal(false)}
-                className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs transition cursor-pointer text-center"
+                className="flex-1 py-2.5 px-3 rounded-xl bg-[#1E293B] hover:bg-slate-700 active:scale-95 text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] font-bold text-xs transition cursor-pointer text-center"
               >
                 Cancelar
               </button>
@@ -868,7 +904,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 disabled={!batchInputValue.trim() && batchInputValue !== '0'}
                 className={`flex-2 py-2.5 px-3 rounded-xl text-white font-black text-xs sm:text-sm shadow-lg transition active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 ${
                   batchMode === 'add'
-                    ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-950'
+                    ? 'bg-[#2563EB] hover:bg-blue-500 shadow-blue-950/60'
                     : 'bg-amber-600 hover:bg-amber-500 shadow-amber-950'
                 }`}
               >
@@ -891,23 +927,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           onClick={() => setShowHistoryModal(false)}
         >
           <div
-            className="relative max-w-sm w-full bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl p-5 text-slate-100 overflow-hidden flex flex-col max-h-[85vh]"
+            className="relative max-w-sm w-full bg-[#1E293B] border border-[#334155] rounded-3xl shadow-2xl p-5 text-[#F8FAFC] overflow-hidden flex flex-col max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between pb-3 border-b border-slate-800">
+            <div className="flex items-start justify-between pb-3 border-b border-[#334155]">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400">
+                <div className="p-2 rounded-xl bg-blue-950/60 border border-[#2563EB]/40 text-blue-400">
                   <History className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-white">Historial de Aportes</h4>
-                  <p className="text-[11px] text-slate-400 line-clamp-1">{item.productName}</p>
+                  <h4 className="text-sm font-bold text-[#F8FAFC]">Historial de Aportes</h4>
+                  <p className="text-[11px] text-[#94A3B8] line-clamp-1">{item.productName}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowHistoryModal(false)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+                className="p-1.5 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -922,15 +958,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       return (
                         <div
                           key={idx}
-                          className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono transition-colors hover:border-slate-700"
+                          className="flex items-center justify-between p-2.5 rounded-xl bg-[#0F172A] border border-[#334155] font-mono transition-colors hover:border-slate-500"
                         >
                           <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 font-sans text-[11px] font-bold">
+                            <span className="px-2 py-0.5 rounded-md bg-[#1E293B] border border-[#334155] text-[#94A3B8] font-sans text-[11px] font-bold">
                               [#{idx + 1}]
                             </span>
                             {isEditing ? (
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] text-slate-400 font-sans">Cantidad:</span>
+                                <span className="text-[11px] text-[#94A3B8] font-sans">Cantidad:</span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -945,12 +981,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                                     }
                                   }}
                                   autoFocus
-                                  className="w-20 px-2 py-1 rounded-lg bg-slate-900 border-2 border-indigo-500 font-mono text-xs font-bold text-white outline-none"
+                                  className="w-20 px-2 py-1 rounded-lg bg-[#0F172A] border-2 border-[#2563EB] font-mono text-xs font-bold text-[#F8FAFC] outline-none"
                                 />
                               </div>
                             ) : (
-                              <span className="text-slate-300 font-sans text-xs">
-                                Cantidad: <strong className={`font-mono text-sm ${val >= 0 ? 'text-indigo-300' : 'text-rose-300'}`}>{val}</strong>
+                              <span className="text-[#94A3B8] font-sans text-xs">
+                                Cantidad: <strong className={`font-mono text-sm ${val >= 0 ? 'text-blue-300' : 'text-red-400'}`}>{val}</strong>
                               </span>
                             )}
                           </div>
@@ -970,7 +1006,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setEditingHistoryIdx(null)}
-                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+                                  className="p-1.5 rounded-lg bg-[#0F172A] hover:bg-slate-800 text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] transition cursor-pointer"
                                   title="Cancelar edición"
                                 >
                                   <X className="w-3.5 h-3.5" />
@@ -981,7 +1017,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleStartEditHistoryEntry(idx, val)}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-indigo-900/60 hover:text-indigo-300 text-slate-400 border border-slate-700/60 transition cursor-pointer text-[11px]"
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#1E293B] hover:bg-blue-950/60 hover:text-blue-300 text-[#94A3B8] border border-[#334155] transition cursor-pointer text-[11px]"
                                   title="Editar esta cantidad"
                                 >
                                   <Edit3 className="w-3 h-3" />
@@ -990,7 +1026,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteHistoryEntry(idx)}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/60 hover:text-rose-300 text-slate-400 border border-slate-700/60 transition cursor-pointer text-[11px]"
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#1E293B] hover:bg-red-950/60 hover:text-red-400 text-[#94A3B8] border border-[#334155] transition cursor-pointer text-[11px]"
                                   title="Eliminar este aporte"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -1004,13 +1040,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     })}
                   </div>
 
-                  <div className="mt-3 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between font-mono">
-                    <span className="text-slate-300 font-sans font-bold text-xs">Total Conteo Físico (QC):</span>
-                    <span className="text-base font-black text-white">{currentCounted} uds.</span>
+                  <div className="mt-3 p-3 rounded-xl bg-blue-950/40 border border-[#2563EB]/40 flex items-center justify-between font-mono">
+                    <span className="text-[#94A3B8] font-sans font-bold text-xs">Total Conteo Físico (QC):</span>
+                    <span className="text-base font-black text-[#F8FAFC]">{currentCounted} uds.</span>
                   </div>
                 </>
               ) : (
-                <div className="py-8 text-center text-slate-400 space-y-1">
+                <div className="py-8 text-center text-[#94A3B8] space-y-1">
                   <p className="font-medium">Sin aportes registrados aún.</p>
                   <p className="text-[11px] text-slate-500">
                     Usa el botón '+' o el ajuste rápido para registrar lotes.
@@ -1019,11 +1055,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               )}
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex items-center gap-2">
+            <div className="pt-3 border-t border-[#334155] flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowHistoryModal(false)}
-                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition cursor-pointer text-center"
+                className="w-full py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-[#F8FAFC] border border-[#334155] font-bold text-xs transition cursor-pointer text-center"
               >
                 Cerrar
               </button>

@@ -1095,7 +1095,7 @@ export default function App() {
   // Si no hay sesión iniciada, mostrar el formulario de acceso
   if (!session || !odooConfig) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between">
+      <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] flex flex-col justify-between">
         <AuthForm
           onSessionStarted={(newSession, config, isDemo, initialCounts, initialCustomItems) => {
             setIsDemoMode(isDemo);
@@ -1128,7 +1128,7 @@ export default function App() {
           }}
           savedConfig={odooConfig || undefined}
         />
-        <footer className="py-4 text-center text-xs text-slate-500 border-t border-slate-900">
+        <footer className="py-4 text-center text-xs text-[#94A3B8] border-t border-[#334155]">
           Odoo 17 JSON-RPC Strict • Multicompañía • Supabase Realtime • PWA Offline Ready
         </footer>
       </div>
@@ -1136,7 +1136,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-24 selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-[#0F172A] text-[#F8FAFC] flex flex-col pb-24 selection:bg-[#2563EB] selection:text-white">
       {/* 1. BARRA SUPERIOR FIJA DE SESIÓN (PIN, Estado WebSocket, Auditores en Vivo, Modo Offline) */}
       <SessionBar
         session={session}
@@ -1192,18 +1192,18 @@ export default function App() {
       {/* 2. ZONA PRINCIPAL DE BÚSQUEDA Y ESCANEO RÁPIDO */}
       <main className="max-w-5xl w-full mx-auto px-3.5 pt-3.5 space-y-3.5">
         {/* Banner de Categoría Obligatoria Activa y Botón de Cambio */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-xs shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-[#1E293B] border border-[#334155] text-xs shadow-sm">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-2 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 shrink-0">
+            <div className="p-2 rounded-xl bg-blue-950/60 border border-[#2563EB]/40 text-blue-400 shrink-0">
               <FolderKanban className="w-4 h-4" />
             </div>
             <div className="min-w-0 truncate">
-              <span className="text-[11px] text-slate-400 block font-medium">
+              <span className="text-[11px] text-[#94A3B8] block font-medium">
                 {session.categoryIds && session.categoryIds.length > 1
                   ? `Áreas de Auditoría (${session.categoryIds.length} Categorías combinadas):`
                   : 'Área de Auditoría Asignada:'}
               </span>
-              <strong className="text-white text-xs sm:text-sm font-bold truncate block" title={session.categoryName}>
+              <strong className="text-[#F8FAFC] text-xs sm:text-sm font-bold truncate block" title={session.categoryName}>
                 {session.categoryName || 'Selecciona una o más categorías para comenzar'}
               </strong>
             </div>
@@ -1214,7 +1214,7 @@ export default function App() {
               loadCategoriesOnly(odooConfig, isDemoMode);
               setIsCategoryModalOpen(true);
             }}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-indigo-300 hover:text-white font-medium text-xs transition cursor-pointer active:scale-95 shrink-0 self-end sm:self-auto"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 border border-[#334155] text-blue-300 hover:text-[#F8FAFC] font-medium text-xs transition cursor-pointer active:scale-95 shrink-0 self-end sm:self-auto"
             title="Cambiar categoría de auditoría"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -1231,7 +1231,7 @@ export default function App() {
             }}
             className="relative flex-1"
           >
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
             <input
               ref={searchInputRef}
               type="text"
@@ -1240,7 +1240,7 @@ export default function App() {
               onKeyDown={handleSearchKeyDown}
               placeholder="Escanear código de barras o buscar producto..."
               autoFocus
-              className="w-full pl-10 pr-24 py-2.5 rounded-2xl bg-slate-900 border border-slate-700/80 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-sm font-medium text-white placeholder-slate-500 outline-none shadow-md shadow-slate-950"
+              className="w-full pl-10 pr-24 py-2.5 rounded-2xl bg-[#1E293B] border border-[#334155] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/25 text-sm font-medium text-[#F8FAFC] placeholder-[#94A3B8] outline-none shadow-md shadow-slate-950"
             />
             {/* Indicador de modo escáner rápido */}
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -1248,12 +1248,12 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="p-1 rounded-md text-slate-400 hover:text-white"
+                  className="p-1 rounded-md text-[#94A3B8] hover:text-[#F8FAFC]"
                 >
                   ✕
                 </button>
               )}
-              <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-indigo-300 border border-slate-700">
+              <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#0F172A] text-blue-300 border border-[#334155]">
                 Enter = Enfocar
               </span>
             </div>
@@ -1263,7 +1263,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setShowCameraScanner(true)}
-            className="flex items-center justify-center p-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-300 hover:text-white shadow-md transition active:scale-95 cursor-pointer"
+            className="flex items-center justify-center p-2.5 rounded-2xl bg-[#1E293B] hover:bg-slate-800 border border-[#334155] text-blue-300 hover:text-[#F8FAFC] shadow-md transition active:scale-95 cursor-pointer"
             title="Abrir cámara del dispositivo para escanear código"
           >
             <Camera className="w-5 h-5" />
@@ -1271,18 +1271,18 @@ export default function App() {
         </div>
 
         {/* 3. FILTROS Y ESTADÍSTICAS RÁPIDAS */}
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-[#1E293B] border border-[#334155] text-xs">
           {/* Métricas rápidas */}
-          <div className="flex items-center gap-3 text-slate-300">
+          <div className="flex items-center gap-3 text-[#94A3B8]">
             <span className="font-semibold">
-              Total: <strong className="text-white">{items.length}</strong>
+              Total: <strong className="text-[#F8FAFC]">{items.length}</strong>
             </span>
             <span>•</span>
-            <span className="text-indigo-300">
-              Auditados: <strong>{totalAuditedCount}</strong>
+            <span className="text-blue-400">
+              Auditados: <strong className="text-blue-300">{totalAuditedCount}</strong>
             </span>
             <span>•</span>
-            <span className={countWithDiff > 0 ? 'text-amber-400 font-bold' : 'text-slate-400'}>
+            <span className={countWithDiff > 0 ? 'text-amber-400 font-bold' : 'text-[#94A3B8]'}>
               Diferencias: <strong>{countWithDiff}</strong>
             </span>
           </div>
@@ -1293,8 +1293,8 @@ export default function App() {
               onClick={() => setDiscrepancyFilter('all')}
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'all'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#2563EB] text-white shadow-xs'
+                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
               }`}
             >
               Todos
@@ -1303,8 +1303,8 @@ export default function App() {
               onClick={() => setDiscrepancyFilter('diff')}
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'diff'
-                  ? 'bg-amber-600 text-white'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
               }`}
             >
               Con Dif.
@@ -1313,8 +1313,8 @@ export default function App() {
               onClick={() => setDiscrepancyFilter('deficit')}
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'deficit'
-                  ? 'bg-rose-600 text-white'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#EF4444] text-white shadow-xs'
+                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
               }`}
             >
               Faltantes
@@ -1323,8 +1323,8 @@ export default function App() {
               onClick={() => setDiscrepancyFilter('surplus')}
               className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                 discrepancyFilter === 'surplus'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#10B981] text-white shadow-xs'
+                  : 'bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155]'
               }`}
             >
               Sobrantes
@@ -1341,16 +1341,16 @@ export default function App() {
               onClick={() => setSelectedCategoryFilter('all')}
               className={`px-3.5 py-1.5 rounded-xl font-bold shrink-0 transition cursor-pointer border flex items-center gap-1.5 shadow-sm ${
                 selectedCategoryFilter === 'all'
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-950/60'
-                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                  ? 'bg-[#2563EB] text-white border-blue-400 shadow-blue-950/60'
+                  : 'bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-slate-500 hover:text-[#F8FAFC]'
               }`}
             >
               <span>Todas las Categorías</span>
               <span
                 className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   selectedCategoryFilter === 'all'
-                    ? 'bg-indigo-500/80 text-white'
-                    : 'bg-slate-800 text-slate-400'
+                    ? 'bg-blue-400/30 text-white border border-blue-300/40'
+                    : 'bg-[#0F172A] text-[#94A3B8]'
                 }`}
               >
                 {items.length}
@@ -1367,16 +1367,16 @@ export default function App() {
                   onClick={() => setSelectedCategoryFilter(tab.id)}
                   className={`px-3.5 py-1.5 rounded-xl font-medium shrink-0 transition cursor-pointer border flex items-center gap-1.5 shadow-sm ${
                     isTabActive
-                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-950/60 font-bold'
-                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                      ? 'bg-[#2563EB] text-white border-blue-400 shadow-blue-950/60 font-bold'
+                      : 'bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-slate-500 hover:text-[#F8FAFC]'
                   }`}
                 >
                   <span>{tab.name}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                       isTabActive
-                        ? 'bg-indigo-500/80 text-white'
-                        : 'bg-slate-800 text-slate-400'
+                        ? 'bg-blue-400/30 text-white border border-blue-300/40'
+                        : 'bg-[#0F172A] text-[#94A3B8]'
                     }`}
                   >
                     {tab.count}
@@ -1390,8 +1390,8 @@ export default function App() {
         {/* Indicador de Carga */}
         {isLoadingItems && (
           <div className="py-16 text-center space-y-3">
-            <RefreshCw className="w-8 h-8 animate-spin text-indigo-400 mx-auto" />
-            <p className="text-sm font-medium text-slate-300">
+            <RefreshCw className="w-8 h-8 animate-spin text-blue-400 mx-auto" />
+            <p className="text-sm font-medium text-[#94A3B8]">
               Extrayendo productos desde Odoo 17 (stock.quant)...
             </p>
           </div>
@@ -1418,10 +1418,10 @@ export default function App() {
 
         {/* 4. LISTADO DE PRODUCTOS EN MODO OSCURO ADAPTADO A MÓVILES */}
         {!isLoadingItems && filteredItems.length === 0 && (
-          <div className="py-16 text-center rounded-2xl border border-dashed border-slate-800 p-8 space-y-2">
-            <Boxes className="w-10 h-10 text-slate-600 mx-auto" />
-            <h3 className="text-sm font-bold text-slate-300">No se encontraron productos</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+          <div className="py-16 text-center rounded-2xl border border-dashed border-[#334155] p-8 space-y-2 bg-[#1E293B]/40">
+            <Boxes className="w-10 h-10 text-slate-500 mx-auto" />
+            <h3 className="text-sm font-bold text-[#F8FAFC]">No se encontraron productos</h3>
+            <p className="text-xs text-[#94A3B8] max-w-sm mx-auto">
               Prueba cambiando el criterio de búsqueda o seleccionando otra ubicación/categoría.
             </p>
           </div>
@@ -1447,7 +1447,7 @@ export default function App() {
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-20 right-4 sm:bottom-22 sm:right-6 z-40 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 active:scale-90 text-white shadow-2xl shadow-indigo-950 flex items-center justify-center border-2 border-indigo-400/40 transition-all duration-300 animate-in fade-in zoom-in cursor-pointer select-none"
+          className="fixed bottom-20 right-4 sm:bottom-22 sm:right-6 z-40 w-12 h-12 rounded-full bg-[#2563EB] hover:bg-blue-500 active:scale-90 text-white shadow-2xl shadow-blue-950 flex items-center justify-center border-2 border-blue-400/40 transition-all duration-300 animate-in fade-in zoom-in cursor-pointer select-none"
           title="Volver al inicio de la lista"
           aria-label="Volver arriba"
         >
@@ -1456,13 +1456,13 @@ export default function App() {
       )}
 
       {/* 5. BARRA INFERIOR FIJA FLOTANTE PARA ACCIONES PRINCIPALES (Enviar a Odoo + Exportar Excel) */}
-      <footer className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-4 py-2.5 shadow-2xl">
+      <footer className="fixed bottom-0 inset-x-0 z-40 bg-[#1E293B]/95 backdrop-blur-md border-t border-[#334155] px-4 py-2.5 shadow-2xl">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
           {/* Botón Exportar a Excel (.xlsx) */}
           <button
             type="button"
             onClick={handleExportExcel}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold shadow-md transition active:scale-95 cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#0F172A] hover:bg-slate-800 border border-[#334155] text-[#F8FAFC] text-xs font-semibold shadow-md transition active:scale-95 cursor-pointer"
             title="Descargar reporte en formato Excel (.xlsx)"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
@@ -1470,11 +1470,11 @@ export default function App() {
             <span className="sm:hidden">Excel</span>
           </button>
 
-          {/* Botón Principal: Enviar Ajuste a Odoo 17 */}
+          {/* Botón Principal: Enviar Ajuste a Odoo 17 (Verde Esmeralda para acción positiva final) */}
           <button
             type="button"
             onClick={() => setShowOdooModal(true)}
-            className="flex-1 max-w-sm flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-950 transition active:scale-95 cursor-pointer"
+            className="flex-1 max-w-sm flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#059669] hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-950 border border-emerald-500/40 transition active:scale-95 cursor-pointer"
             title="Escribe únicamente en inventory_quantity de stock.quant"
           >
             <Send className="w-4 h-4" />

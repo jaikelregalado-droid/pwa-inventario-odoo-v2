@@ -335,14 +335,14 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3 sm:p-4 animate-in fade-in">
-      <div className="relative w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl flex flex-col max-h-[95vh]">
+      <div className="relative w-full max-w-sm rounded-3xl bg-[#1E293B] border border-[#334155] overflow-hidden shadow-2xl flex flex-col max-h-[95vh]">
         {/* Cabecera */}
-        <div className="flex items-center justify-between p-3.5 border-b border-slate-800 bg-slate-950/90">
+        <div className="flex items-center justify-between p-3.5 border-b border-[#334155] bg-[#0F172A]/90">
           <div className="flex items-center gap-2">
-            <Camera className="w-4 h-4 text-indigo-400" />
+            <Camera className="w-4 h-4 text-blue-400" />
             <div>
-              <span className="text-xs font-bold text-white block">Captura de Código Barcode</span>
-              <span className="text-[10px] text-slate-400 block">Foto Fija + OCR / Decodificador</span>
+              <span className="text-xs font-bold text-[#F8FAFC] block">Captura de Código Barcode</span>
+              <span className="text-[10px] text-[#94A3B8] block">Foto Fija + OCR / Decodificador</span>
             </div>
           </div>
 
@@ -354,7 +354,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 className={`p-1.5 rounded-xl border transition cursor-pointer ${
                   isTorchOn
                     ? 'bg-amber-500 text-black border-amber-400 shadow-md shadow-amber-500/30'
-                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+                    : 'bg-[#0F172A] text-[#94A3B8] border-[#334155] hover:text-[#F8FAFC]'
                 }`}
                 title="Linterna / Flash"
               >
@@ -364,7 +364,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 transition cursor-pointer"
+              className="p-1.5 rounded-xl bg-[#0F172A] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#334155] transition cursor-pointer"
               title="Cerrar cámara"
             >
               <X className="w-4 h-4" />
@@ -387,7 +387,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             <img
               src={capturedImage}
               alt="Foto capturada"
-              className="w-full h-full object-contain bg-slate-950"
+              className="w-full h-full object-contain bg-black"
             />
           )}
 
@@ -397,12 +397,12 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
           {/* Marco de enfoque y alineación para la toma de foto */}
           {!capturedImage && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-6">
-              <div className="relative w-64 h-36 border-2 border-indigo-400/80 rounded-2xl shadow-[0_0_25px_rgba(99,102,241,0.25)] flex items-center justify-center">
+              <div className="relative w-64 h-36 border-2 border-blue-400/80 rounded-2xl shadow-[0_0_25px_rgba(37,99,235,0.25)] flex items-center justify-center">
                 {/* Esquinas resaltadas */}
-                <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-indigo-300 rounded-tl-lg"></div>
-                <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-indigo-300 rounded-tr-lg"></div>
-                <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-indigo-300 rounded-bl-lg"></div>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-indigo-300 rounded-br-lg"></div>
+                <div className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-blue-400 rounded-tl-lg"></div>
+                <div className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-blue-400 rounded-tr-lg"></div>
+                <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-blue-400 rounded-bl-lg"></div>
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-blue-400 rounded-br-lg"></div>
 
                 {/* Línea guía de encuadre */}
                 <div className="w-full h-0.5 bg-rose-500 shadow-[0_0_12px_#f43f5e] opacity-80"></div>
@@ -412,9 +412,9 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
           {/* Indicador de Procesamiento de Imagen */}
           {isProcessing && (
-            <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center space-y-3 animate-in fade-in">
-              <RefreshCw className="w-9 h-9 text-indigo-400 animate-spin" />
-              <p className="text-xs font-semibold text-slate-200">{processingStatus}</p>
+            <div className="absolute inset-0 bg-[#0F172A]/90 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center space-y-3 animate-in fade-in">
+              <RefreshCw className="w-9 h-9 text-blue-400 animate-spin" />
+              <p className="text-xs font-semibold text-[#F8FAFC]">{processingStatus}</p>
             </div>
           )}
 
@@ -439,7 +439,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         )}
 
         {/* Panel de Botón de Disparo y Acciones */}
-        <div className="p-3.5 bg-slate-950 border-t border-slate-800 space-y-3">
+        <div className="p-3.5 bg-[#0F172A] border-t border-[#334155] space-y-3">
           {!capturedImage ? (
             <div className="flex items-center gap-2">
               {/* Botón Principal: TOMAR FOTO */}
@@ -447,7 +447,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 type="button"
                 onClick={handleCapturePhoto}
                 disabled={isProcessing}
-                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold text-sm shadow-xl shadow-indigo-950 transition cursor-pointer"
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-[#2563EB] hover:bg-blue-500 active:scale-95 text-white font-bold text-sm shadow-xl shadow-blue-950 transition cursor-pointer"
               >
                 <Camera className="w-5 h-5" />
                 <span>Tomar Foto y Escanear</span>
@@ -457,7 +457,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="p-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+                className="p-3 rounded-2xl bg-[#1E293B] hover:bg-slate-800 border border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC] transition cursor-pointer"
                 title="Subir imagen de la galería"
               >
                 <ImageIcon className="w-5 h-5" />
@@ -477,7 +477,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                   type="button"
                   onClick={handleRetake}
                   disabled={isProcessing}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition cursor-pointer"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-[#1E293B] hover:bg-slate-700 text-[#F8FAFC] border border-[#334155] font-bold text-xs transition cursor-pointer"
                 >
                   Volver a Tomar Foto
                 </button>
@@ -491,13 +491,13 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                   onChange={(e) => setManualCodeInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleConfirmManualCode()}
                   placeholder="O escribe el código aquí..."
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500 font-mono"
+                  className="flex-1 px-3 py-2 rounded-xl bg-[#1E293B] border border-[#334155] text-xs text-[#F8FAFC] placeholder-[#94A3B8] outline-none focus:border-[#2563EB] font-mono"
                 />
                 <button
                   type="button"
                   onClick={handleConfirmManualCode}
                   disabled={!manualCodeInput.trim()}
-                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                  className="px-3 py-2 rounded-xl bg-[#2563EB] hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1"
                 >
                   <span>OK</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -508,7 +508,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
           {/* Formatos Soportados */}
           <div className="flex items-center justify-center gap-1 text-[10px] font-mono text-slate-500 pt-0.5">
-            <Scan className="w-3 h-3 text-indigo-400" />
+            <Scan className="w-3 h-3 text-blue-400" />
             <span>EAN-13 • EAN-8 • UPC-A/E • Code 128 • OCR</span>
           </div>
         </div>
