@@ -256,10 +256,25 @@ export default function App() {
     }
   };
 
-  // Cargar catálogo de categorías desde Odoo o Demo
+  // Cargar catálogo de categorías desde Odoo o Demo con persistencia local para modo offline
   const loadCategoriesOnly = async (cfg: OdooConnectionConfig, isDemo = false) => {
     setIsLoadingCategories(true);
     setCategoryLoadError(null);
+
+    // Si estamos sin conexión o como respaldo inmediato, intentar recuperar de localStorage
+    const cachedCatsRaw = localStorage.getItem('odoo_audit_cached_categories');
+    if (cachedCatsRaw) {
+      try {
+        const parsedCats = JSON.parse(cachedCatsRaw);
+        if (Array.isArray(parsedCats) && parsedCats.length > 0) {
+          setCategories(parsedCats);
+          if (!navigator.onLine) {
+            setIsLoadingCategories(false);
+            return parsedCats;
+          }
+        }
+      } catch {}
+    }
 
     if (isDemo) {
       const demo = getDemoFVGrupoData();
@@ -274,9 +289,22 @@ export default function App() {
       }
       const cats = await fetchCategories(cfg);
       setCategories(cats);
+      if (Array.isArray(cats) && cats.length > 0) {
+        localStorage.setItem('odoo_audit_cached_categories', JSON.stringify(cats));
+      }
       return cats;
     } catch (err: any) {
-      console.error('Error cargando categorías de Odoo:', err);
+      console.warn('Error cargando categorías de Odoo:', err);
+      if (cachedCatsRaw) {
+        try {
+          const parsedCats = JSON.parse(cachedCatsRaw);
+          if (Array.isArray(parsedCats) && parsedCats.length > 0) {
+            setCategories(parsedCats);
+            setCategoryLoadError(null);
+            return parsedCats;
+          }
+        } catch {}
+      }
       setCategoryLoadError(err.message || 'Error al obtener la lista de categorías desde Odoo 17');
       return [];
     } finally {
@@ -301,15 +329,15 @@ export default function App() {
               ? session.categoryIds
               : (session?.categoryId ? [session.categoryId] : [])));
 
-    // REQUISITO 1: Restablecer filtro de categoría a 'all' (Todas las Categorías) por defecto
+    // Restablecer filtro de categoría a 'all' (Todas las Categorías) por defecto
     setSelectedCategoryFilter('all');
-    setItems([]); // Limpiar la lista anterior obligatoriamente
-    setIsLoadingItems(true);
     setLoadError(null);
 
     const activePin = session?.pin || localStorage.getItem('odoo_audit_active_pin');
+    let hasLocalData = false;
 
-    // REQUISITO: Verificar si la sesión activa corresponde a un Inventario Personalizado Multi-Departamento
+    // REQUISITO OFFLINE: Verificar almacenamiento local PRIMERO (Inventario Personalizado o Catálogo en LocalStorage)
+    // para evitar pantallas en blanco y spinner eterno ante fallos de red
     if (activePin) {
       const customRaw = localStorage.getItem(`odoo_audit_custom_inventory_${activePin}`);
       if (customRaw) {
@@ -317,27 +345,43 @@ export default function App() {
           const parsedCustom = JSON.parse(customRaw);
           if (Array.isArray(parsedCustom) && parsedCustom.length > 0) {
             setItems(parsedCustom);
-            setIsLoadingItems(false);
-            return;
+            hasLocalData = true;
+            if (!navigator.onLine) {
+              setIsLoadingItems(false);
+              setScannerAlert({
+                message: 'Modo Offline (Sin conexión): operando con inventario local',
+                type: 'info',
+                id: Date.now(),
+              });
+              return;
+            }
           }
         } catch {}
       }
-    }
 
-    // REQUISITO: Si estamos offline y hay datos guardados localmente, cargar catálogo de inmediato
-    if (!navigator.onLine && activePin) {
-      const cachedOffline = loadOfflineCatalog(activePin);
-      if (cachedOffline && cachedOffline.length > 0) {
-        setItems(cachedOffline);
-        setIsLoadingItems(false);
-        setScannerAlert({
-          message: 'Modo Offline: trabajando con catálogo guardado en este dispositivo',
-          type: 'info',
-          id: Date.now(),
-        });
-        return;
+      if (!hasLocalData) {
+        const cachedOffline = loadOfflineCatalog(activePin);
+        if (cachedOffline && cachedOffline.length > 0) {
+          setItems(cachedOffline);
+          hasLocalData = true;
+          if (!navigator.onLine) {
+            setIsLoadingItems(false);
+            setScannerAlert({
+              message: 'Modo Offline (Sin conexión): operando con catálogo en este dispositivo',
+              type: 'info',
+              id: Date.now(),
+            });
+            return;
+          }
+        }
       }
     }
+
+    // Solo si no tenemos ningún dato local previo, limpiar lista
+    if (!hasLocalData) {
+      setItems([]);
+    }
+    setIsLoadingItems(true);
 
     if (isDemo) {
       const demo = getDemoFVGrupoData();
@@ -483,8 +527,8 @@ export default function App() {
         );
       }
     } catch (err: any) {
-      console.error('Error transparente recibido de Odoo:', err);
-      // REQUISITO: Si falla la conexión a Odoo pero tenemos el catálogo guardado localmente, usarlo
+      console.warn('Aviso de conexión con Odoo:', err);
+      // REQUISITO: Si falla la conexión a Odoo pero tenemos catálogo guardado localmente o en memoria, usarlo
       if (activePin) {
         const cachedOffline = loadOfflineCatalog(activePin);
         if (cachedOffline && cachedOffline.length > 0) {
@@ -497,6 +541,15 @@ export default function App() {
           });
           return;
         }
+      }
+      if (items.length > 0) {
+        setLoadError(null);
+        setScannerAlert({
+          message: 'Sin conexión a Odoo: continuando con los datos en memoria',
+          type: 'warning',
+          id: Date.now(),
+        });
+        return;
       }
       setLoadError(err.message || String(err) || 'Error desconocido al comunicar con Odoo 17');
     } finally {
@@ -661,23 +714,25 @@ export default function App() {
     const effectiveHistory = newHistory !== undefined ? newHistory : targetItem?.countHistory;
 
     // Actualizar estado local inmediatamente para latencia cero en UI
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id === quantId) {
-          return {
-            ...item,
-            countedQuantity: cleanCount,
-            difference: Math.round((cleanCount - item.quantity) * 1000) / 1000,
-            countHistory: effectiveHistory,
-            lastAuditedBy: session.auditorName,
-            lastAuditedAt: now,
-            photoUrl: photoUrl !== undefined ? photoUrl : item.photoUrl,
-            syncedToOdoo: false,
-          };
-        }
-        return item;
-      })
-    );
+    const updatedItems = items.map((item) => {
+      if (item.id === quantId) {
+        return {
+          ...item,
+          countedQuantity: cleanCount,
+          difference: Math.round((cleanCount - item.quantity) * 1000) / 1000,
+          countHistory: effectiveHistory,
+          lastAuditedBy: session.auditorName,
+          lastAuditedAt: now,
+          photoUrl: photoUrl !== undefined ? photoUrl : item.photoUrl,
+          syncedToOdoo: false,
+        };
+      }
+      return item;
+    });
+
+    setItems(updatedItems);
+    // Persistir de inmediato en LocalStorage para garantizar que el conteo no se pierda jamás si no hay red
+    saveOfflineCatalog(session.pin, updatedItems);
 
     // Emitir por Supabase Realtime a todos los auditores con el mismo PIN y persistir en audit_items con (pin, product_id)
     const updatePayload: RealtimeCountUpdate = {
@@ -723,18 +778,19 @@ export default function App() {
     const nextLocked = !targetItem.isLocked;
     const now = new Date().toISOString();
 
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id === quantId) {
-          return {
-            ...item,
-            isLocked: nextLocked,
-            lastAuditedAt: now,
-          };
-        }
-        return item;
-      })
-    );
+    const updatedItems = items.map((item) => {
+      if (item.id === quantId) {
+        return {
+          ...item,
+          isLocked: nextLocked,
+          lastAuditedAt: now,
+        };
+      }
+      return item;
+    });
+
+    setItems(updatedItems);
+    saveOfflineCatalog(session.pin, updatedItems);
 
     if (nextLocked) {
       sound.playSuccess();
@@ -837,6 +893,17 @@ export default function App() {
       if (searchInputRef.current) {
         searchInputRef.current.focus();
       }
+      return;
+    }
+
+    // Si estamos sin conexión, no intentar llamada remota a Odoo para evitar demoras
+    if (!navigator.onLine) {
+      sound.playError();
+      setScannerAlert({
+        message: `Código "${clean}" no encontrado en catálogo descargado (Modo Offline)`,
+        type: 'warning',
+        id: Date.now(),
+      });
       return;
     }
 
@@ -1153,6 +1220,23 @@ export default function App() {
         onOpenOdooModal={() => setShowOdooConfigModal(true)}
       />
 
+      {/* Aviso discreto persistente de Modo Offline (Sin conexión) */}
+      {!isOnline && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs px-3.5 py-1.5 flex items-center justify-between font-medium">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span className="truncate">
+              <strong>Modo Offline (Sin conexión):</strong> Los conteos se guardan localmente y se sincronizarán al reconectar.
+            </span>
+          </div>
+          {pendingSyncCount > 0 && (
+            <span className="shrink-0 ml-2 px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-800 text-[10px] font-bold">
+              {pendingSyncCount} pendientes
+            </span>
+          )}
+        </div>
+      )}
+
       {/* 6. Notificaciones Visuales y Colores de Alertas del Escáner */}
       {scannerAlert && (
         <div
@@ -1389,13 +1473,21 @@ export default function App() {
           </div>
         )}
 
-        {/* Indicador de Carga */}
-        {isLoadingItems && (
+        {/* Indicador de Carga: Spinner central solo si la lista está completamente vacía */}
+        {isLoadingItems && items.length === 0 && (
           <div className="py-16 text-center space-y-3">
             <RefreshCw className="w-8 h-8 animate-spin text-[#7C3AED] mx-auto" />
             <p className="text-sm font-medium text-[#64748B]">
               Extrayendo productos desde Odoo 17 (stock.quant)...
             </p>
+          </div>
+        )}
+
+        {/* Indicador discreto si ya tenemos items en pantalla y se actualiza en segundo plano */}
+        {isLoadingItems && items.length > 0 && (
+          <div className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-purple-50 text-[#7C3AED] text-xs font-semibold border border-purple-200 shadow-xs">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            <span>Actualizando datos con Odoo en segundo plano...</span>
           </div>
         )}
 

@@ -186,9 +186,14 @@ export async function executeJsonRpc<T = any>(
     id: Math.floor(Math.random() * 10000000),
   };
 
+  // Si el navegador ya detecta que no hay conexión, fallar de inmediato sin bloquear ni esperar timeouts
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('Sin conexión a internet (Modo Offline activo)');
+  }
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout para failover rápido a modo local
 
     const response = await fetch(requestUrl, {
       method: 'POST',
@@ -223,7 +228,7 @@ export async function executeJsonRpc<T = any>(
     return json.result as T;
   } catch (err: any) {
     if (err.name === 'AbortError') {
-      throw new Error('Tiempo de espera agotado (25s) al conectar con Odoo. Verifica tu proxy o la red.');
+      throw new Error('Tiempo de espera agotado al conectar con Odoo (12s). Modo offline disponible.');
     }
     // Si fue un fallo de red o CORS en modo directo
     if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError')) {
