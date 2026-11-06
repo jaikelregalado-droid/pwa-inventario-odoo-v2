@@ -105,3 +105,5 @@ export interface AuditorPresence {
   joinedAt: string;
   lastActive: string;
 }
+
+export type ProductSortOption = 'name_asc' | 'qty_desc' | 'qty_asc';

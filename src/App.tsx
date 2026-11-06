@@ -31,7 +31,8 @@ import {
   AuditorPresence,
   RealtimeCountUpdate,
   OdooCategory,
-  OdooLocation
+  OdooLocation,
+  ProductSortOption
 } from './types';
 import {
   fetchQuants,
@@ -112,6 +113,10 @@ export default function App() {
   const [categories, setCategories] = useState<OdooCategory[]>([]);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | 'all'>('all');
   const [discrepancyFilter, setDiscrepancyFilter] = useState<'all' | 'diff' | 'exact' | 'deficit' | 'surplus'>('all');
+  // 1. REQUISITO: Filtro para ocultar productos con stock en 0 ('C. Sistema' === 0)
+  const [hideZeroStock, setHideZeroStock] = useState<boolean>(false);
+  // 2. REQUISITO: Selector de ordenamiento (Nombre A-Z, Cantidad Mayor a Menor, Cantidad Menor a Mayor)
+  const [sortOption, setSortOption] = useState<ProductSortOption>('name_asc');
 
   // Estado para selección de categoría obligatoria
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
@@ -573,11 +578,36 @@ export default function App() {
   // Efecto para verificar si se requiere selección de categoría o recargar al cambiar ubicación/categoría
   useEffect(() => {
     if (session && odooConfig) {
+      // ACCESO DIRECTO AUTOMÁTICO POR PIN:
+      // Si ya existen productos en memoria, catálogo offline o inventario personalizado para este PIN,
+      // o si la sesión ya tiene categorías asignadas, omitir el selector y no volver a mostrar el modal.
+      const offlineCatalog = loadOfflineCatalog(session.pin);
+      const customRaw = localStorage.getItem(`odoo_audit_custom_inventory_${session.pin}`);
+      const hasPriorInventory = (items && items.length > 0) ||
+        (offlineCatalog && offlineCatalog.length > 0) ||
+        Boolean(customRaw);
+
       const hasCategories = Boolean(
         (session.categoryIds && session.categoryIds.length > 0) || session.categoryId
       );
+
+      if (hasPriorInventory) {
+        setIsCategoryModalOpen(false);
+        if (items.length === 0) {
+          if (offlineCatalog && offlineCatalog.length > 0) {
+            setItems(offlineCatalog);
+          } else if (hasCategories) {
+            const catFilter = session.categoryIds && session.categoryIds.length > 0
+              ? session.categoryIds
+              : session.categoryId;
+            loadInventoryData(odooConfig, session.locationId, isDemoMode, catFilter);
+          }
+        }
+        return;
+      }
+
       if (!hasCategories) {
-        // Flujo obligatorio: abrir modal y NO cargar productos generales
+        // Flujo obligatorio solo para PIN nuevo sin inventario previo: abrir modal y NO cargar productos generales
         loadCategoriesOnly(odooConfig, isDemoMode);
         setIsCategoryModalOpen(true);
       } else {
@@ -1077,6 +1107,8 @@ export default function App() {
     setFocusedQuantId(null);
     setSelectedCategoryFilter('all');
     setDiscrepancyFilter('all');
+    setHideZeroStock(false);
+    setSortOption('name_asc');
     localStorage.removeItem(STORAGE_SESSION_KEY);
   };
 
@@ -1100,6 +1132,8 @@ export default function App() {
       ? session.categoryIds
       : (session?.categoryId ? [session.categoryId] : []);
 
+    const targetSource = hideZeroStock ? items.filter((i) => i.quantity !== 0) : items;
+
     if (selectedIds.length > 0) {
       return selectedIds.map((id) => {
         const rawName = catMap.get(id) || `Categoría #${id}`;
@@ -1108,7 +1142,7 @@ export default function App() {
           id,
           name: displayName,
           fullName: rawName,
-          count: items.filter((i) => Number(i.categId) === Number(id)).length,
+          count: targetSource.filter((i) => Number(i.categId) === Number(id)).length,
         };
       });
     }
@@ -1122,15 +1156,26 @@ export default function App() {
         id,
         name: displayName,
         fullName: rawName,
-        count: items.filter((i) => Number(i.categId) === Number(id)).length,
+        count: targetSource.filter((i) => Number(i.categId) === Number(id)).length,
       };
     });
-  }, [session?.categoryIds, session?.categoryId, categories, items]);
+  }, [session?.categoryIds, session?.categoryId, categories, items, hideZeroStock]);
 
-  // Filtros aplicados a los productos
-  const filteredItems = useMemo(() => {
+  // Conteo de productos con stock en 0 ('C. Sistema' === 0) para el badge del switch
+  const zeroStockCount = useMemo(() => {
     return items.filter((item) => {
-      // Filtro de búsqueda por texto o código
+      if (selectedCategoryFilter !== 'all') {
+        const itemCatId = item.categId !== undefined ? Number(item.categId) : null;
+        if (itemCatId !== Number(selectedCategoryFilter)) return false;
+      }
+      return item.quantity === 0;
+    }).length;
+  }, [items, selectedCategoryFilter]);
+
+  // Filtros aplicados a los productos con ordenamiento dinámico y exclusión de stock en 0
+  const filteredItems = useMemo(() => {
+    const list = items.filter((item) => {
+      // 1. Filtro de búsqueda por texto o código
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matches =
@@ -1140,22 +1185,47 @@ export default function App() {
         if (!matches) return false;
       }
 
-      // Filtro por categoría: 'all' muestra la totalidad de productos de las categorías seleccionadas
+      // 2. Filtro por categoría: 'all' muestra la totalidad de productos de las categorías seleccionadas
       if (selectedCategoryFilter !== 'all') {
         const itemCatId = item.categId !== undefined ? Number(item.categId) : null;
         const targetCatId = Number(selectedCategoryFilter);
         if (itemCatId !== targetCatId) return false;
       }
 
-      // Filtro por discrepancia
+      // 3. Filtro por discrepancia
       if (discrepancyFilter === 'diff' && item.difference === 0) return false;
       if (discrepancyFilter === 'exact' && item.difference !== 0) return false;
       if (discrepancyFilter === 'deficit' && item.difference >= 0) return false;
       if (discrepancyFilter === 'surplus' && item.difference <= 0) return false;
 
+      // 4. REQUISITO 1: Filtro de productos en cero (0) ('C. Sistema' === 0)
+      if (hideZeroStock && item.quantity === 0) {
+        return false;
+      }
+
       return true;
     });
-  }, [items, searchQuery, selectedCategoryFilter, discrepancyFilter]);
+
+    // 5. REQUISITO 2: Selector de ordenamiento
+    list.sort((a, b) => {
+      if (sortOption === 'qty_desc') {
+        if (b.quantity !== a.quantity) {
+          return b.quantity - a.quantity;
+        }
+        return a.productName.localeCompare(b.productName, 'es', { sensitivity: 'base', numeric: true });
+      }
+      if (sortOption === 'qty_asc') {
+        if (a.quantity !== b.quantity) {
+          return a.quantity - b.quantity;
+        }
+        return a.productName.localeCompare(b.productName, 'es', { sensitivity: 'base', numeric: true });
+      }
+      // 'name_asc': Nombre (A-Z) alfabéticamente
+      return a.productName.localeCompare(b.productName, 'es', { sensitivity: 'base', numeric: true });
+    });
+
+    return list;
+  }, [items, searchQuery, selectedCategoryFilter, discrepancyFilter, hideZeroStock, sortOption]);
 
   // Resumen de estadísticas
   const totalAuditedCount = items.filter((i) => i.lastAuditedAt).length;
@@ -1172,11 +1242,36 @@ export default function App() {
             setSession(newSession);
 
             if (initialCustomItems && initialCustomItems.length > 0) {
-              // REQUISITO: Cargar directamente los productos elegidos del inventario multi-departamento
+              // REQUISITO: Cargar directamente los productos elegidos del inventario multi-departamento o previo
               setItems(initialCustomItems);
               saveOfflineCatalog(newSession.pin, initialCustomItems);
               setIsCategoryModalOpen(false);
               return;
+            }
+
+            // ACCESO DIRECTO AUTOMÁTICO POR PIN:
+            // Si ya existe catálogo offline para este PIN, usarlo de inmediato sin mostrar selector
+            const existingOffline = loadOfflineCatalog(newSession.pin);
+            if (existingOffline && existingOffline.length > 0) {
+              setItems(existingOffline);
+              setIsCategoryModalOpen(false);
+              return;
+            }
+
+            // Verificar si hay inventario personalizado guardado en localStorage
+            const savedCustom = localStorage.getItem(`odoo_audit_custom_inventory_${newSession.pin}`);
+            if (savedCustom) {
+              try {
+                const parsed = JSON.parse(savedCustom);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  setItems(parsed);
+                  saveOfflineCatalog(newSession.pin, parsed);
+                  setIsCategoryModalOpen(false);
+                  return;
+                }
+              } catch (e) {
+                console.warn('Error parsing saved custom inventory:', e);
+              }
             }
 
             setItems([]); // Limpiar la lista anterior explícitamente
@@ -1188,9 +1283,14 @@ export default function App() {
               : newSession.categoryId;
 
             if (sessionCat) {
+              setIsCategoryModalOpen(false);
               loadInventoryData(config, newSession.locationId, isDemo, sessionCat, initialCounts);
+            } else if (initialCounts && initialCounts.length > 0) {
+              // Si ya habían conteos registrados para este PIN en Supabase pero sin categoría explícita, no abrir modal
+              setIsCategoryModalOpen(false);
+              loadInventoryData(config, newSession.locationId, isDemo, undefined, initialCounts);
             } else {
-              // Si aún no tiene categoría, abrir el modal obligatorio de selección
+              // Si aún no tiene categoría ni inventario previo, abrir el modal obligatorio de selección
               loadCategoriesOnly(config, isDemo);
               setIsCategoryModalOpen(true);
             }
@@ -1308,60 +1408,82 @@ export default function App() {
           </button>
         </div>
 
-        {/* Barra de Búsqueda y Escáner Láser con Autofocus Constante */}
-        <div className="flex items-center gap-2">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleBarcodeScanned(searchQuery);
-            }}
-            className="relative flex-1"
-          >
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Escanear código de barras o buscar producto..."
-              autoFocus
-              className="w-full pl-10 pr-24 py-2.5 rounded-2xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 text-sm font-medium text-[#0F172A] placeholder-[#94A3B8] outline-none shadow-sm"
-            />
-            {/* Indicador de modo escáner rápido */}
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="p-1 rounded-md text-[#64748B] hover:text-[#0F172A]"
-                >
-                  ✕
-                </button>
-              )}
-              <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#F8FAFC] text-[#7C3AED] border border-[#E2E8F0]">
-                Enter = Enfocar
-              </span>
-            </div>
-          </form>
+        {/* Barra de Búsqueda, Selector de Ordenamiento y Escáner */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          {/* Campo de búsqueda con autofocus */}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleBarcodeScanned(searchQuery);
+              }}
+              className="relative flex-1 min-w-0"
+            >
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Escanear código de barras o buscar producto..."
+                autoFocus
+                className="w-full pl-10 pr-24 py-2.5 rounded-2xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 text-sm font-medium text-[#0F172A] placeholder-[#94A3B8] outline-none shadow-sm"
+              />
+              {/* Indicador de modo escáner rápido */}
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="p-1 rounded-md text-[#64748B] hover:text-[#0F172A]"
+                  >
+                    ✕
+                  </button>
+                )}
+                <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#F8FAFC] text-[#7C3AED] border border-[#E2E8F0]">
+                  Enter = Enfocar
+                </span>
+              </div>
+            </form>
 
-          {/* Botón de Cámara para Escaneo en Vivo */}
-          <button
-            type="button"
-            onClick={() => setShowCameraScanner(true)}
-            className="flex items-center justify-center p-2.5 rounded-2xl bg-white hover:bg-slate-50 border border-[#CBD5E1] text-[#7C3AED] hover:text-[#6D28D9] shadow-sm transition active:scale-95 cursor-pointer"
-            title="Abrir cámara del dispositivo para escanear código"
-          >
-            <Camera className="w-5 h-5" />
-          </button>
+            {/* Botón de Cámara para Escaneo en Vivo */}
+            <button
+              type="button"
+              onClick={() => setShowCameraScanner(true)}
+              className="flex items-center justify-center p-2.5 rounded-2xl bg-white hover:bg-slate-50 border border-[#CBD5E1] text-[#7C3AED] hover:text-[#6D28D9] shadow-sm transition active:scale-95 cursor-pointer shrink-0"
+              title="Abrir cámara del dispositivo para escanear código"
+            >
+              <Camera className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* 2. REQUISITO: Selector de Ordenamiento junto a la barra de búsqueda */}
+          <div className="relative shrink-0 w-full sm:w-auto">
+            <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7C3AED] pointer-events-none" />
+            <select
+              value={sortOption}
+              onChange={(e) => {
+                sound.playScan();
+                setSortOption(e.target.value as ProductSortOption);
+              }}
+              className="w-full sm:w-auto appearance-none pl-9 pr-9 py-2.5 rounded-2xl bg-white border border-[#CBD5E1] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 text-xs font-semibold text-[#0F172A] outline-none shadow-sm cursor-pointer hover:bg-slate-50 transition"
+              title="Ordenar listado de productos"
+            >
+              <option value="name_asc">Nombre (A-Z)</option>
+              <option value="qty_desc">Cantidad del Sistema (Mayor a Menor)</option>
+              <option value="qty_asc">Cantidad del Sistema (Menor a Mayor)</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B] pointer-events-none" />
+          </div>
         </div>
 
         {/* 3. FILTROS Y ESTADÍSTICAS RÁPIDAS */}
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-white border border-[#E2E8F0] text-xs shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-white border border-[#E2E8F0] text-xs shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
           {/* Métricas rápidas */}
-          <div className="flex items-center gap-3 text-[#64748B]">
+          <div className="flex flex-wrap items-center gap-3 text-[#64748B]">
             <span className="font-semibold">
-              Total: <strong className="text-[#0F172A]">{items.length}</strong>
+              Total: <strong className="text-[#0F172A]">{filteredItems.length !== items.length ? `${filteredItems.length}/${items.length}` : items.length}</strong>
             </span>
             <span>•</span>
             <span className="text-[#7C3AED]">
@@ -1373,48 +1495,92 @@ export default function App() {
             </span>
           </div>
 
-          {/* Filtro por estado de discrepancia */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 1. REQUISITO: Interruptor (Switch) "Ocultar stock en 0" */}
             <button
-              onClick={() => setDiscrepancyFilter('all')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
-                discrepancyFilter === 'all'
-                  ? 'bg-[#7C3AED] text-white shadow-xs'
-                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
+              type="button"
+              role="switch"
+              aria-checked={hideZeroStock}
+              onClick={() => {
+                sound.playScan();
+                setHideZeroStock((prev) => !prev);
+              }}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl font-medium transition cursor-pointer select-none border text-xs shadow-2xs ${
+                hideZeroStock
+                  ? 'bg-purple-50 border-[#7C3AED] text-[#7C3AED] font-bold'
+                  : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100'
               }`}
+              title="Excluir productos con cantidad teórica del sistema (C. Sistema) igual a 0"
             >
-              Todos
+              <div
+                className={`w-7 h-4 rounded-full transition-colors relative flex items-center p-0.5 ${
+                  hideZeroStock ? 'bg-[#7C3AED]' : 'bg-slate-300'
+                }`}
+              >
+                <div
+                  className={`w-3 h-3 rounded-full bg-white shadow-xs transition-transform duration-200 ${
+                    hideZeroStock ? 'translate-x-3' : 'translate-x-0'
+                  }`}
+                />
+              </div>
+              <span>Ocultar stock en 0</span>
+              {zeroStockCount > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    hideZeroStock
+                      ? 'bg-[#7C3AED]/15 text-[#7C3AED]'
+                      : 'bg-slate-200 text-[#64748B]'
+                  }`}
+                  title={`${zeroStockCount} productos con stock en 0`}
+                >
+                  {zeroStockCount}
+                </span>
+              )}
             </button>
-            <button
-              onClick={() => setDiscrepancyFilter('diff')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
-                discrepancyFilter === 'diff'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
-              }`}
-            >
-              Con Dif.
-            </button>
-            <button
-              onClick={() => setDiscrepancyFilter('deficit')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
-                discrepancyFilter === 'deficit'
-                  ? 'bg-[#EF4444] text-white shadow-xs'
-                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
-              }`}
-            >
-              Faltantes
-            </button>
-            <button
-              onClick={() => setDiscrepancyFilter('surplus')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
-                discrepancyFilter === 'surplus'
-                  ? 'bg-[#10B981] text-white shadow-xs'
-                  : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
-              }`}
-            >
-              Sobrantes
-            </button>
+
+            {/* Filtro por estado de discrepancia */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              <button
+                onClick={() => setDiscrepancyFilter('all')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                  discrepancyFilter === 'all'
+                    ? 'bg-[#7C3AED] text-white shadow-xs'
+                    : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setDiscrepancyFilter('diff')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                  discrepancyFilter === 'diff'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
+                }`}
+              >
+                Con Dif.
+              </button>
+              <button
+                onClick={() => setDiscrepancyFilter('deficit')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                  discrepancyFilter === 'deficit'
+                    ? 'bg-[#EF4444] text-white shadow-xs'
+                    : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
+                }`}
+              >
+                Faltantes
+              </button>
+              <button
+                onClick={() => setDiscrepancyFilter('surplus')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
+                  discrepancyFilter === 'surplus'
+                    ? 'bg-[#10B981] text-white shadow-xs'
+                    : 'bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] border border-[#E2E8F0]'
+                }`}
+              >
+                Sobrantes
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1439,7 +1605,7 @@ export default function App() {
                     : 'bg-slate-100 text-[#64748B]'
                 }`}
               >
-                {items.length}
+                {hideZeroStock ? items.filter((i) => i.quantity !== 0).length : items.length}
               </span>
             </button>
 
@@ -1516,12 +1682,23 @@ export default function App() {
             <Boxes className="w-10 h-10 text-slate-400 mx-auto" />
             <h3 className="text-sm font-bold text-[#0F172A]">No se encontraron productos</h3>
             <p className="text-xs text-[#64748B] max-w-sm mx-auto">
-              Prueba cambiando el criterio de búsqueda o seleccionando otra ubicación/categoría.
+              {hideZeroStock
+                ? 'Todos los productos en este filtro tienen stock en 0. Desactiva "Ocultar stock en 0" para visualizarlos.'
+                : 'Prueba cambiando el criterio de búsqueda o seleccionando otra ubicación/categoría.'}
             </p>
+            {hideZeroStock && (
+              <button
+                type="button"
+                onClick={() => setHideZeroStock(false)}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 text-[#7C3AED] hover:bg-purple-100 text-xs font-semibold cursor-pointer border border-purple-200 transition"
+              >
+                Mostrar productos con stock en 0
+              </button>
+            )}
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5">
           {filteredItems.map((item) => (
             <ProductCard
               key={item.id}

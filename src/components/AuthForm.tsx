@@ -41,6 +41,7 @@ import {
   SupabaseSettings
 } from '../lib/supabase';
 import { sound } from '../lib/audio';
+import { loadOfflineCatalog } from '../lib/offlineSync';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface AuthFormProps {
@@ -401,7 +402,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
     }
   };
 
-  // Unirse a Sesión Existente mediante PIN
+  // Unirse a Sesión Existente mediante PIN con acceso directo automático
   const handleJoinSession = async () => {
     if (!auditorName.trim()) {
       setAuthError('Por favor ingresa tu nombre de auditor.');
@@ -419,15 +420,46 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
     setIsCheckingPin(true);
 
     try {
-      // 1. Al ingresar un PIN de sesión en la PWA, realizar primero una consulta a Supabase (SELECT) para verificar si la sesión ya existe
+      // 1. Verificar si ya existe inventario localmente en este dispositivo para este PIN
+      const localOfflineItems = loadOfflineCatalog(cleanPin);
+      const customInventoryRaw = localStorage.getItem(`odoo_audit_custom_inventory_${cleanPin}`);
+      let customItems: QuantItem[] | undefined;
+      if (customInventoryRaw) {
+        try {
+          const parsed = JSON.parse(customInventoryRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            customItems = parsed;
+          }
+        } catch {}
+      }
+
+      // 2. Al ingresar un PIN de sesión en la PWA, consultar Supabase (SELECT)
       const checkResult = await checkSessionExistsInSupabase(cleanPin);
 
-      // 2. Si la sesión existe:
-      if (checkResult.exists) {
+      const hasPriorSession = checkResult.exists ||
+        (localOfflineItems && localOfflineItems.length > 0) ||
+        (customItems && customItems.length > 0);
+
+      // Si la sesión o inventario ya existe previamente para ese PIN:
+      if (hasPriorSession) {
         localStorage.setItem('odoo_auditor_name', auditorName.trim());
         localStorage.setItem('odoo_audit_active_pin', cleanPin);
         const resolvedSessionId = checkResult.session?.id || `session_${cleanPin}`;
         localStorage.setItem('odoo_audit_session_id', resolvedSessionId);
+
+        // Inferir categorías existentes si las tiene la sesión o el catálogo
+        const existingCatIds = checkResult.session?.categoryIds ||
+          (checkResult.session?.categoryId ? [checkResult.session.categoryId] : undefined) ||
+          (localOfflineItems && localOfflineItems.length > 0
+            ? Array.from(new Set(localOfflineItems.map((i) => i.categId).filter((id): id is number => typeof id === 'number')))
+            : undefined) ||
+          (customItems && customItems.length > 0
+            ? Array.from(new Set(customItems.map((i) => i.categId).filter((id): id is number => typeof id === 'number')))
+            : undefined);
+
+        const existingCatName = checkResult.session?.categoryName ||
+          (localOfflineItems && localOfflineItems[0]?.categName ? localOfflineItems[0].categName : undefined) ||
+          (customItems ? 'Inventario Personalizado' : undefined);
 
         const session: AuditSession = {
           id: resolvedSessionId,
@@ -438,9 +470,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           companyName: checkResult.session?.companyName || 'FV GRUPO EMPRESARIAL, C.A.',
           companyId: checkResult.session?.companyId || selectedCompanyId || 1,
           locationName: checkResult.session?.locationName || 'WH/Existencias',
-          categoryId: checkResult.session?.categoryId,
-          categoryIds: checkResult.session?.categoryIds || (checkResult.session?.categoryId ? [checkResult.session.categoryId] : undefined),
-          categoryName: checkResult.session?.categoryName,
+          locationId: checkResult.session?.locationId || selectedLocationId,
+          categoryId: existingCatIds?.[0],
+          categoryIds: existingCatIds,
+          categoryName: existingCatName,
           categoryNames: checkResult.session?.categoryNames,
         };
 
@@ -460,8 +493,14 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
         };
 
         sound.playSuccess();
-        // Conectar la sesión y pasar los conteos recuperados mediante SELECT
-        onSessionStarted(session, finalConfig, false, checkResult.counts);
+        // Redirigir directamente al panel de conteo y auditoría omitiendo selectores
+        onSessionStarted(
+          session,
+          finalConfig,
+          false,
+          checkResult.counts,
+          customItems || localOfflineItems || undefined
+        );
         return;
       }
 

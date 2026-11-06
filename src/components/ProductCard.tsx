@@ -279,225 +279,158 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const hasDiscrepancy = !isUnaudited && !isExact;
 
   const stateBorderClass = isFocused
-    ? 'border-[#7C3AED] ring-4 ring-[#7C3AED]/20 shadow-xl scale-[1.01]'
+    ? 'border-[#7C3AED] ring-2 ring-[#7C3AED]/30 shadow-md scale-[1.005]'
     : hasDiscrepancy
-    ? 'border-[#E2E8F0] border-t-4 border-t-[#EF4444] shadow-[0_1px_3px_rgba(0,0,0,0.05)]'
+    ? 'border-[#E2E8F0] border-l-4 border-l-[#EF4444] shadow-xs'
     : isCountCorrect
-    ? 'border-[#E2E8F0] border-t-4 border-t-[#10B981] shadow-[0_1px_3px_rgba(0,0,0,0.05)]'
-    : 'border-[#E2E8F0] border-t-4 border-t-[#CBD5E1] shadow-[0_1px_3px_rgba(0,0,0,0.05)]';
+    ? 'border-[#E2E8F0] border-l-4 border-l-[#10B981] shadow-xs'
+    : 'border-[#E2E8F0] border-l-4 border-l-[#CBD5E1] shadow-xs';
 
   return (
     <div
       ref={cardRef}
-      style={{ scrollMarginTop: '120px' }}
-      className={`relative rounded-2xl bg-white border transition-all duration-300 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.05)] scroll-mt-[120px] ${stateBorderClass}`}
+      style={{ scrollMarginTop: '100px' }}
+      className={`relative rounded-xl bg-white border transition-all duration-200 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] scroll-mt-[100px] ${stateBorderClass}`}
     >
-      {/* Indicador superior de estado de sincronización y estado visual */}
-      <div className="flex items-center justify-between px-3.5 pt-3 pb-1.5 border-b border-[#E2E8F0] text-[11px] bg-white">
-        <div className="flex items-center gap-1.5 font-mono text-[#64748B]">
-          <span className={`inline-block w-2 h-2 rounded-full ${
+      {/* 1. Barra superior compacta: ID, Ubicación, Estado visual e Historial */}
+      <div className="flex items-center justify-between px-2.5 py-1 border-b border-[#E2E8F0] text-[10px] bg-[#F8FAFC]/60">
+        <div className="flex items-center gap-1.5 font-mono text-[#64748B] min-w-0">
+          <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${
             hasDiscrepancy
               ? 'bg-[#EF4444]'
               : isCountCorrect
               ? 'bg-[#10B981]'
               : 'bg-[#94A3B8]'
           }`}></span>
-          <span className="font-semibold text-[#0F172A]">ID #{item.id}</span>
+          <span className="font-bold text-[#0F172A] shrink-0">#{item.id}</span>
           {item.locationName && (
-            <span className="truncate max-w-[130px] text-[#64748B]" title={item.locationName}>
+            <span className="truncate max-w-[110px] text-[#64748B]" title={item.locationName}>
               • {item.locationName.split('/').pop()}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 shrink-0">
           {/* Badge de Estado Visual Claro */}
           {hasDiscrepancy && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-[#EF4444] border border-rose-200">
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-50 text-[#EF4444] border border-rose-200">
               Dif: {difference > 0 ? `+${difference}` : difference}
             </span>
           )}
           {isCountCorrect && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-[#10B981] border border-emerald-200 flex items-center gap-1">
-              <Check className="w-3 h-3 stroke-[3]" />
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-[#10B981] border border-emerald-200 flex items-center gap-0.5">
+              <Check className="w-2.5 h-2.5 stroke-[3]" />
               <span>Correcto</span>
             </span>
           )}
           {isUnaudited && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-[#64748B] border border-[#E2E8F0]">
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 text-[#64748B] border border-[#E2E8F0]">
               Sin Auditar
             </span>
           )}
 
           {/* Botón de Historial de Conteos Parciales */}
-          <button
-            type="button"
-            onClick={() => setShowHistoryModal(true)}
-            className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg border transition cursor-pointer ${
-              item.countHistory && item.countHistory.length > 0
-                ? 'bg-purple-50 border-[#7C3AED]/30 text-[#7C3AED] hover:bg-purple-100'
-                : 'bg-slate-50 border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
-            }`}
-            title="Ver desglose de conteos parciales"
-          >
-            <History className="w-3 h-3 text-[#7C3AED]" />
-            <span>Historial{item.countHistory && item.countHistory.length > 0 ? ` (${item.countHistory.length})` : ''}</span>
-          </button>
+          {item.countHistory && item.countHistory.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowHistoryModal(true)}
+              className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-50 border border-[#7C3AED]/30 text-[#7C3AED] hover:bg-purple-100 cursor-pointer transition"
+              title="Ver desglose de conteos parciales"
+            >
+              <History className="w-2.5 h-2.5 text-[#7C3AED]" />
+              <span>({item.countHistory.length})</span>
+            </button>
+          )}
 
           {item.isLocked && (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shadow-xs">
+            <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-800 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 shadow-2xs" title="Inmovilizado">
               <Lock className="w-2.5 h-2.5 text-amber-600" />
-              <span>Inmovilizado</span>
             </span>
           )}
-          {item.lastAuditedBy && (
-            <span className="flex items-center gap-1 text-[#64748B]">
-              <User className="w-3 h-3 text-slate-400" />
-              <span className="truncate max-w-[90px]">{item.lastAuditedBy}</span>
-            </span>
-          )}
+
           {isSavedRecently && (
-            <span className="flex items-center gap-1 text-[#10B981] animate-pulse font-medium">
-              <Check className="w-3 h-3" />
-              Guardado
+            <span className="flex items-center gap-0.5 text-[#10B981] text-[9px] font-medium animate-pulse">
+              <Check className="w-2.5 h-2.5" />
             </span>
           )}
         </div>
       </div>
 
-      <div className="p-3.5 space-y-3 bg-white">
+      {/* 2. Cuerpo del Producto: Datos compactos y fila unificada de conteo */}
+      <div className="p-2 sm:p-2.5 space-y-1.5 bg-white">
         {/* Cabecera del Producto: Nombre y Códigos */}
         <div>
-          <h3 className="text-sm font-bold text-[#0F172A] leading-snug line-clamp-2">
+          <h3 className="text-xs sm:text-[13px] font-bold text-[#0F172A] leading-tight line-clamp-1" title={item.productName}>
             {item.productName}
           </h3>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px]">
             {item.defaultCode && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 font-mono text-[#7C3AED] text-[11px] font-semibold">
+              <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-purple-50 border border-purple-200 font-mono text-[#7C3AED] font-semibold">
                 Ref: {item.defaultCode}
               </span>
             )}
             {item.barcode && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-50 border border-[#E2E8F0] font-mono text-[#64748B] text-[11px]">
-                EAN: {item.barcode}
+              <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-slate-50 border border-[#E2E8F0] font-mono text-[#64748B]">
+                {item.barcode}
               </span>
             )}
             {item.categName && (
-              <span className="text-[11px] text-[#64748B] px-1.5 py-0.5 rounded bg-slate-50 border border-[#E2E8F0]">
+              <span className="text-[#64748B] px-1 py-0.2 rounded bg-slate-50 border border-[#E2E8F0] truncate max-w-[130px]" title={item.categName}>
                 {item.categName}
               </span>
             )}
           </div>
+        </div>
 
-          {/* Desglose de Historial si existen aportes registrados */}
-          {item.countHistory && item.countHistory.length > 0 && (
-            <div
-              onClick={() => setShowHistoryModal(true)}
-              className="mt-2 flex items-center justify-between p-1.5 px-2.5 rounded-lg bg-purple-50/70 border border-[#7C3AED]/25 text-[11px] font-mono text-[#7C3AED] hover:bg-purple-100/70 transition cursor-pointer"
-              title="Haz clic para ver el desglose completo de aportes"
-            >
-              <div className="flex items-center gap-1.5 min-w-0 truncate">
-                <span className="text-[#64748B] font-sans font-medium text-[10px]">Historial:</span>
-                <span className="truncate">{item.countHistory.map(n => n >= 0 ? `+${n}` : `${n}`).join(' ')}</span>
+        {/* 3. Strip Unificado de Métricas (QS, DQ) y Control de Conteo Rápido (QC) */}
+        <div className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+          {/* Métricas: QS (Sistema) y DQ (Diferencia) */}
+          <div className="flex items-center gap-2 sm:gap-3 text-xs pl-1">
+            {/* QS: Sistema */}
+            <div className="flex flex-col" title="Cantidad teórica del sistema (QS)">
+              <div className="flex items-center gap-0.5 text-[9px] uppercase font-bold text-[#64748B] tracking-wider">
+                <span>QS</span>
+                {item.isLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
               </div>
-              <span className="font-bold text-[#7C3AED] shrink-0 ml-2">= Total {currentCounted}</span>
+              <span className={`text-xs sm:text-sm font-extrabold ${item.isLocked ? 'text-amber-900 font-mono' : 'text-[#0F172A]'}`}>
+                {item.quantity}
+              </span>
             </div>
-          )}
-        </div>
 
-        {/* Métricas Principales: QS (Sistema), QC (Contado) y DQ (Diferencia) */}
-        <div className="grid grid-cols-3 gap-2 p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-          {/* QS: Sistema (inmovilizado si is_locked está activo) */}
-          <div
-            className={`flex flex-col items-center justify-center p-1.5 rounded-lg border transition-colors ${
-              item.isLocked
-                ? 'bg-amber-50 border-amber-200 text-amber-800'
-                : 'bg-white border-slate-200/60 text-[#64748B]'
-            }`}
-            title={
-              item.isLocked
-                ? 'Cantidad de Sistema inmovilizada / congelada'
-                : 'Cantidad de Sistema obtenida de Odoo 17'
-            }
-          >
-            <div className="flex items-center gap-1">
-              <span className={`text-[10px] font-medium uppercase tracking-wider ${
-                item.isLocked ? 'text-amber-800 font-bold' : 'text-[#64748B]'
+            {/* DQ: Diferencia */}
+            <div className="flex flex-col" title="Diferencia de auditoría (DQ = QC - QS)">
+              <span className="text-[9px] uppercase font-bold text-[#64748B] tracking-wider">
+                DQ
+              </span>
+              <span className={`text-xs sm:text-sm font-extrabold flex items-center gap-0.5 ${
+                isSurplus
+                  ? 'text-[#10B981]'
+                  : isDeficit
+                  ? 'text-[#EF4444]'
+                  : 'text-[#64748B]'
               }`}>
-                QS (Sistema)
+                {isSurplus && <ArrowUpRight className="w-3 h-3 shrink-0" />}
+                {isDeficit && <ArrowDownRight className="w-3 h-3 shrink-0" />}
+                <span>{isSurplus ? `+${difference}` : difference}</span>
               </span>
-              {item.isLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
             </div>
-            <span className={`text-base font-extrabold mt-0.5 ${
-              item.isLocked ? 'text-amber-900 font-mono' : 'text-[#0F172A]'
-            }`}>
-              {item.quantity}
-            </span>
           </div>
 
-          {/* QC: Contado Físico (Haz clic para ingreso rápido por lote o corrección) */}
-          <button
-            type="button"
-            onClick={() => openBatchModal('add')}
-            className="flex flex-col items-center justify-center p-1.5 rounded-lg bg-purple-50 hover:bg-purple-100/80 active:scale-95 border border-[#7C3AED]/30 transition cursor-pointer select-none group text-left shadow-xs"
-            title="Toca para ingresar cantidad por lote o corregir total"
-          >
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#7C3AED]">
-                QC (Físico)
-              </span>
-              <Plus className="w-2.5 h-2.5 text-[#7C3AED] opacity-70 group-hover:opacity-100" />
-            </div>
-            <span className="text-base font-extrabold text-[#0F172A] mt-0.5 group-hover:text-[#7C3AED]">
-              {currentCounted}
-            </span>
-          </button>
-
-          {/* DQ: Diferencia Codificada por Color */}
-          <div
-            className={`flex flex-col items-center justify-center p-1.5 rounded-lg border ${
-              isCountCorrect
-                ? 'bg-emerald-50 border-emerald-200 text-[#10B981]'
-                : hasDiscrepancy
-                ? 'bg-rose-50 border-rose-200 text-[#EF4444]'
-                : 'bg-white border-[#E2E8F0] text-[#64748B]'
-            }`}
-          >
-            <div className="flex items-center gap-0.5">
-              <span className="text-[10px] font-medium uppercase tracking-wider">
-                DQ (Dif.)
-              </span>
-              {isSurplus && <ArrowUpRight className="w-3 h-3 text-[#10B981]" />}
-              {isDeficit && <ArrowDownRight className="w-3 h-3 text-[#EF4444]" />}
-            </div>
-            <span className="text-base font-extrabold mt-0.5">
-              {isSurplus ? `+${difference}` : difference}
-            </span>
-          </div>
-        </div>
-
-        {/* Zona de Edición Rápida de QC: Input numérico directo + Botón '+' para ingreso por lote */}
-        <div className="pt-1">
-          <div className="text-[11px] font-medium text-[#64748B] mb-1 flex items-center justify-between">
-            <span>Ajuste de Conteo Físico:</span>
-            <span className="text-[10px] text-slate-400">Toca '+' para suma por lote</span>
-          </div>
-
-          <div className="flex items-stretch gap-2">
+          {/* Bloque de Conteo Físico Rápido (QC) */}
+          <div className="flex items-center gap-1 shrink-0">
             {/* Botón táctil -1 */}
             <button
               type="button"
               onClick={() => increment(-1)}
-              className="px-3.5 flex items-center justify-center min-h-[46px] rounded-xl bg-white hover:bg-rose-50 active:scale-95 border border-[#E2E8F0] text-[#EF4444] font-bold transition cursor-pointer select-none shadow-xs"
-              aria-label="Restar 1 unidad"
+              className="w-7 h-7 sm:w-7.5 sm:h-7.5 flex items-center justify-center rounded-lg bg-white hover:bg-rose-50 active:scale-95 border border-[#E2E8F0] text-[#EF4444] font-bold transition cursor-pointer select-none shadow-2xs"
               title="Restar 1 unidad"
             >
-              <Minus className="w-5 h-5 text-[#EF4444]" />
+              <Minus className="w-3.5 h-3.5" />
             </button>
 
-            {/* Input Editable Directo para números enteros o decimales */}
-            <form onSubmit={(e) => { e.preventDefault(); }} className="relative w-28">
+            {/* Input Editable Directo */}
+            <form onSubmit={(e) => { e.preventDefault(); }} className="relative w-16 sm:w-20">
               <input
                 type="text"
                 inputMode="decimal"
@@ -505,43 +438,39 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 onChange={handleInputChange}
                 onBlur={handleInputBlur}
                 onKeyDown={handleKeyDown}
-                className="w-full h-[46px] rounded-xl bg-white border-2 border-[#7C3AED] focus:border-[#6D28D9] focus:ring-2 focus:ring-[#7C3AED]/20 text-center font-mono text-xl font-bold text-[#0F172A] transition outline-none shadow-xs"
+                className="w-full h-7 sm:h-7.5 rounded-lg bg-white border-2 border-[#7C3AED] focus:border-[#6D28D9] focus:ring-1 focus:ring-[#7C3AED]/30 text-center font-mono text-xs sm:text-sm font-bold text-[#0F172A] transition outline-none shadow-2xs"
                 placeholder="0"
                 autoComplete="off"
-                autoCorrect="off"
-                spellCheck="false"
-                title="Escribe la cantidad contada con decimales (ej. 2.51)"
+                title="Cantidad contada (QC)"
               />
             </form>
 
-            {/* Botón '+' principal: Abre el cuadro de diálogo para lote */}
+            {/* Botón + Lote */}
             <button
               type="button"
               onClick={() => openBatchModal('add')}
-              className="flex-1 flex items-center justify-center gap-1.5 min-h-[46px] px-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] active:scale-95 text-white font-bold transition cursor-pointer select-none shadow-sm shadow-[#7C3AED]/30"
-              aria-label="Ingreso rápido por lote"
-              title="Abre el cuadro de diálogo para sumar por lote o corregir"
+              className="h-7 sm:h-7.5 px-2 flex items-center justify-center gap-1 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] active:scale-95 text-white text-[11px] font-bold transition cursor-pointer select-none shadow-2xs"
+              title="Ingreso rápido por lote o suma acumulada"
             >
-              <Plus className="w-5 h-5" />
-              <span className="text-xs sm:text-sm font-bold">Lote</span>
+              <Plus className="w-3 h-3" />
+              <span>Lote</span>
             </button>
 
-            {/* Acceso rápido +1 unitario directo */}
+            {/* Acceso rápido +1 */}
             <button
               type="button"
               onClick={() => increment(1)}
-              className="px-2.5 rounded-xl bg-white hover:bg-purple-50 active:scale-95 border border-[#E2E8F0] text-[#7C3AED] font-mono text-xs font-bold transition cursor-pointer shadow-xs"
-              title="Sumar 1 unidad directa (+1)"
+              className="w-7 h-7 sm:w-7.5 sm:h-7.5 flex items-center justify-center rounded-lg bg-white hover:bg-purple-50 active:scale-95 border border-[#E2E8F0] text-[#7C3AED] font-mono text-xs font-bold transition cursor-pointer shadow-2xs"
+              title="Sumar 1 unidad (+1)"
             >
               +1
             </button>
           </div>
         </div>
 
-        {/* Barra inferior: Evidencia Fotográfica y Detalles */}
-        <div className="pt-1 flex items-center justify-between border-t border-[#E2E8F0] text-xs">
-          {/* Captura de foto nativa */}
-          <div className="flex items-center gap-2">
+        {/* 4. Barra inferior compacta: Foto, Inmovilización, Auditor y Hora */}
+        <div className="pt-0.5 flex items-center justify-between text-[10px] text-[#64748B]">
+          <div className="flex items-center gap-1.5">
             <input
               ref={fileInputRef}
               type="file"
@@ -554,72 +483,75 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
             <label
               htmlFor={`photo-input-${item.id}`}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 active:scale-95 border border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] transition cursor-pointer text-xs shadow-xs"
-              title="Capturar foto de evidencia con la cámara"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white hover:bg-slate-50 active:scale-95 border border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] transition cursor-pointer text-[10px] shadow-2xs"
+              title="Capturar foto de evidencia"
             >
-              <Camera className="w-3.5 h-3.5 text-[#7C3AED]" />
-              <span>{item.photoUrl ? 'Cambiar Foto' : 'Foto Evidencia'}</span>
+              <Camera className="w-3 h-3 text-[#7C3AED]" />
+              <span>{item.photoUrl ? 'Foto ✓' : 'Foto'}</span>
             </label>
 
-            {/* Candado de Inmovilización / Bloqueo por Producto */}
+            {item.photoUrl && (
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowPhotoModal(true)}
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-50 border border-purple-200 text-[#7C3AED] text-[10px] cursor-pointer"
+                  title="Ver foto adjunta"
+                >
+                  <Eye className="w-2.5 h-2.5" />
+                  <span>Ver</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={removePhoto}
+                  className="p-0.5 rounded text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                  title="Eliminar foto"
+                >
+                  <Trash2 className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            )}
+
             {onToggleLock && (
               <button
                 type="button"
                 onClick={() => onToggleLock(item.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition active:scale-95 cursor-pointer select-none shadow-xs ${
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold transition active:scale-95 cursor-pointer select-none shadow-2xs ${
                   item.isLocked
-                    ? 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+                    ? 'bg-amber-50 border-amber-200 text-amber-800'
                     : 'bg-white hover:bg-slate-50 border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A]'
                 }`}
-                title={
-                  item.isLocked
-                    ? 'Inmovilizado: QS protegido contra variaciones de ventas/entradas en Odoo durante la auditoría. Clic para desbloquear.'
-                    : 'Desbloqueado: Clic para inmovilizar la cantidad de sistema (QS).'
-                }
+                title={item.isLocked ? 'Inmovilizado: Clic para desbloquear' : 'Clic para inmovilizar QS'}
               >
                 {item.isLocked ? (
                   <>
-                    <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>Inmovilizado</span>
+                    <Lock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                    <span>Bloqueado</span>
                   </>
                 ) : (
                   <>
-                    <Unlock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <Unlock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                     <span>Inmovilizar</span>
                   </>
                 )}
               </button>
             )}
+          </div>
 
-            {item.photoUrl && (
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setShowPhotoModal(true)}
-                  className="flex items-center gap-1 px-2 py-1 rounded bg-purple-50 border border-purple-200 text-[#7C3AED] hover:text-[#6D28D9] text-[11px] cursor-pointer"
-                >
-                  <Eye className="w-3 h-3" />
-                  <span>Ver Foto</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={removePhoto}
-                  className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                  title="Eliminar foto"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+          <div className="flex items-center gap-2">
+            {item.lastAuditedBy && (
+              <div className="flex items-center gap-1 text-[10px] text-[#64748B] truncate max-w-[100px]" title={item.lastAuditedBy}>
+                <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                <span className="truncate">{item.lastAuditedBy}</span>
+              </div>
+            )}
+            {item.lastAuditedAt && (
+              <div className="flex items-center gap-0.5 text-[9px] text-slate-400">
+                <Clock className="w-2.5 h-2.5 shrink-0" />
+                <span>{new Date(item.lastAuditedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             )}
           </div>
-
-          {/* Fecha / Hora */}
-          {item.lastAuditedAt && (
-            <div className="flex items-center gap-1 text-[10px] text-[#64748B]">
-              <Clock className="w-3 h-3" />
-              <span>{new Date(item.lastAuditedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-          )}
         </div>
       </div>
 

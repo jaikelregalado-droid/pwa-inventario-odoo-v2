@@ -90,7 +90,7 @@ export default defineConfig(() => {
       odooProxyPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['favicon.ico', 'apple-touch-icon.jpeg', 'icon.svg'],
         manifest: {
           id: '/',
           name: 'Odoo 17 Inventario Realtime PWA',
@@ -103,27 +103,27 @@ export default defineConfig(() => {
           scope: '/',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: '/pwa-192x192.jpeg',
               sizes: '192x192',
-              type: 'image/png',
+              type: 'image/jpeg',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: '/pwa-maskable-512x512.jpeg',
               sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any',
+              type: 'image/jpeg',
+              purpose: 'any maskable',
             },
             {
-              src: '/pwa-maskable-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable',
+              src: '/icon.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
+              purpose: 'any',
             },
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpeg,jpg}'],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
