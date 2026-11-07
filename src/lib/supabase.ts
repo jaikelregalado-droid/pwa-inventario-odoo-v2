@@ -503,6 +503,7 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
   exists: boolean;
   session?: Partial<AuditSession> & { odooUrl?: string; odooDb?: string };
   counts?: RealtimeCountUpdate[];
+  items?: QuantItem[];
   error?: string;
 }> {
   const client = getSupabaseClient();
@@ -531,6 +532,7 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
         exists: true,
         session: parsedSession || { pin, id: `session_${pin}` },
         counts: parsedCounts,
+        items: [],
       };
     }
     return { configured: false, exists: false };
@@ -590,6 +592,7 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
             exists: true,
             session: parsed,
             counts: [],
+            items: [],
           };
         } catch {}
       }
@@ -610,6 +613,34 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
       photoUrl: row.photo_url || undefined,
       notes: row.notes || undefined,
     }));
+
+    const items: QuantItem[] = countsRows.map((row) => {
+      const { history, cleanNotes } = decodeCountHistory(row.notes);
+      const counted = Number(row.counted_quantity !== undefined && row.counted_quantity !== null ? row.counted_quantity : (row.qty ?? 0));
+      const sysQty = Number(row.system_quantity ?? 0);
+      return {
+        id: Number(row.quant_id || row.product_id),
+        productId: Number(row.product_id || row.quant_id),
+        productName: row.product_name || `Producto #${row.product_id}`,
+        defaultCode: row.default_code || '',
+        barcode: row.barcode || '',
+        quantity: sysQty,
+        inventoryQuantity: sysQty,
+        countedQuantity: counted,
+        difference: Math.round((counted - sysQty) * 1000) / 1000,
+        isLocked: Boolean(row.is_locked),
+        locationId: 0,
+        locationName: '',
+        categId: undefined,
+        categName: '',
+        lastAuditedBy: row.auditor_name || undefined,
+        lastAuditedAt: row.updated_at || undefined,
+        photoUrl: row.photo_url || undefined,
+        notes: cleanNotes || undefined,
+        countHistory: history.length > 0 ? history : undefined,
+        syncedToOdoo: false,
+      };
+    });
 
     // Cachear localmente para contingencia offline
     try {
@@ -638,6 +669,7 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
       exists: true,
       session: foundSession,
       counts,
+      items,
     };
   } catch (err: any) {
     console.error('Error al verificar sesión en Supabase:', err);
@@ -1223,6 +1255,36 @@ export async function fetchAuditItemsAsQuantItems(pin: string): Promise<QuantIte
     console.warn('Aviso recuperando audit_items como QuantItems:', err);
   }
   return [];
+}
+
+/**
+ * Recupera el estado completo de la sesión y los productos auditados desde Supabase
+ */
+export async function fetchSessionAuditState(pin: string): Promise<{
+  exists: boolean;
+  items: QuantItem[];
+  session?: Partial<AuditSession> & { odooUrl?: string; odooDb?: string };
+}> {
+  if (!pin) {
+    return { exists: false, items: [] };
+  }
+
+  try {
+    const cleanPin = pin.trim();
+    const [items, sessionCheck] = await Promise.all([
+      fetchAuditItemsAsQuantItems(cleanPin),
+      checkSessionExistsInSupabase(cleanPin),
+    ]);
+
+    return {
+      exists: sessionCheck.exists || items.length > 0,
+      items,
+      session: sessionCheck.session,
+    };
+  } catch (err) {
+    console.warn('Error en fetchSessionAuditState:', err);
+    return { exists: false, items: [] };
+  }
 }
 
 /**
