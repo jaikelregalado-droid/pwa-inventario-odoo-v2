@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, Users, Wifi, WifiOff, Volume2, VolumeX, LogOut, ShieldAlert, Radio, Download, Settings } from 'lucide-react';
+import { Copy, Check, Users, Wifi, WifiOff, Volume2, VolumeX, LogOut, ShieldAlert, Radio, Download, Settings, RefreshCw } from 'lucide-react';
 import { AuditSession, AuditorPresence } from '../types';
 import { sound } from '../lib/audio';
 
@@ -14,6 +14,8 @@ interface SessionBarProps {
   isOnline?: boolean;
   pendingSyncCount?: number;
   onTriggerPendingSync?: () => void;
+  onManualSync?: () => void;
+  isManualSyncing?: boolean;
 }
 
 export const SessionBar: React.FC<SessionBarProps> = ({
@@ -27,6 +29,8 @@ export const SessionBar: React.FC<SessionBarProps> = ({
   isOnline = true,
   pendingSyncCount = 0,
   onTriggerPendingSync,
+  onManualSync,
+  isManualSyncing = false,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showAuditorsList, setShowAuditorsList] = useState(false);
@@ -152,6 +156,24 @@ export const SessionBar: React.FC<SessionBarProps> = ({
                 : 'Desconectado'}
             </span>
           </button>
+
+          {/* BOTÓN DE SINCRONIZACIÓN MANUAL (Requisito 2) */}
+          {onManualSync && (
+            <button
+              type="button"
+              onClick={onManualSync}
+              disabled={isManualSyncing}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition active:scale-95 cursor-pointer shadow-sm select-none ${
+                isManualSyncing
+                  ? 'bg-purple-100 border-[#7C3AED] text-[#7C3AED] animate-pulse cursor-wait'
+                  : 'bg-white hover:bg-purple-50 border-[#CBD5E1] hover:border-[#7C3AED]/50 text-[#0F172A] hover:text-[#7C3AED]'
+              }`}
+              title="Tomar todos los conteos acumulados localmente y sincronizarlos con Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-[#7C3AED] shrink-0 ${isManualSyncing ? 'animate-spin' : ''}`} />
+              <span className="whitespace-nowrap font-bold">🔄 Sincronizar Manualmente</span>
+            </button>
+          )}
 
           {/* Recuento de Auditores en Vivo */}
           <div className="relative">

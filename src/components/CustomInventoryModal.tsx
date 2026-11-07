@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { QuantItem, OdooConnectionConfig, AuditSession } from '../types';
 import { searchGlobalProductsForCustomAudit } from '../lib/odoo';
-import { generateSessionPin, registerSessionInSupabase, getSupabaseClient } from '../lib/supabase';
+import { generateSessionPin, registerSessionInSupabase, getSupabaseClient, saveAuditItemsToSupabase } from '../lib/supabase';
 import { sound } from '../lib/audio';
 
 interface CustomInventoryModalProps {
@@ -173,29 +173,10 @@ export const CustomInventoryModal: React.FC<CustomInventoryModalProps> = ({
       await registerSessionInSupabase(newSession, odooConfig);
 
       // 3. Pre-insertar los productos seleccionados en la tabla 'audit_items' con su QS (sistema)
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const recordsToInsert = finalItems.map((it) => ({
-          id: `${pin}_${it.productId || it.id}`,
-          pin,
-          product_id: it.productId || it.id,
-          quant_id: it.id,
-          product_name: it.productName,
-          barcode: it.barcode || null,
-          system_quantity: it.quantity,
-          counted_quantity: 0,
-          qty: 0,
-          is_locked: false,
-          auditor_name: finalAuditor,
-          notes: JSON.stringify({ isCustomInventory: true, category: it.categName }),
-          updated_at: new Date().toISOString(),
-        }));
-
-        try {
-          await supabase.from('audit_items').upsert(recordsToInsert, { onConflict: 'pin,product_id' });
-        } catch (itemInsertErr) {
-          console.warn('Error al insertar items en audit_items:', itemInsertErr);
-        }
+      try {
+        await saveAuditItemsToSupabase(pin, finalItems, finalAuditor);
+      } catch (itemInsertErr) {
+        console.warn('Error al insertar items en audit_items:', itemInsertErr);
       }
 
       // 4. Redirigir a la pantalla principal cargando solo los productos seleccionados

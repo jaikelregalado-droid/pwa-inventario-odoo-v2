@@ -49,7 +49,9 @@ import {
   fetchSessionCountsFromSupabase,
   updateSessionCategoryInSupabase,
   updateSessionCategoriesInSupabase,
-  saveAuditItemsToSupabase
+  saveAuditItemsToSupabase,
+  syncAllCountsToSupabase,
+  fetchAuditItemsAsQuantItems,
 } from './lib/supabase';
 import { exportAuditToExcel } from './lib/exportExcel';
 import { sound } from './lib/audio';
@@ -59,6 +61,7 @@ import {
   queuePendingCount,
   getPendingCounts,
   syncPendingCounts,
+  clearPendingCounts,
 } from './lib/offlineSync';
 import { AuthForm } from './components/AuthForm';
 import { SessionBar } from './components/SessionBar';
@@ -134,6 +137,14 @@ export default function App() {
   // Modo Offline y cola de sincronización automática
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+
+  // REQUISITO 2: Estado de Sincronización Manual
+  const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
+  const [manualSyncNotice, setManualSyncNotice] = useState<{
+    type: 'success' | 'error';
+    message: string;
+    count?: number;
+  } | null>(null);
 
   // Retroalimentación visual y alertas del escáner con código de colores (Verde Éxito / Rojo Error)
   const [scannerAlert, setScannerAlert] = useState<{
@@ -259,6 +270,112 @@ export default function App() {
         id: Date.now(),
       });
     }
+  };
+
+  // REQUISITO 2: Sincronización Manual Masiva hacia Supabase
+  const handleManualSync = async () => {
+    if (!session) return;
+    if (isManualSyncing) return;
+
+    setIsManualSyncing(true);
+    setManualSyncNotice(null);
+
+    try {
+      // 1. Obtener los conteos locales más recientes (en memoria y catálogo offline)
+      const offlineItems = loadOfflineCatalog(session.pin) || [];
+      const currentItems = items.length > 0 ? items : offlineItems;
+
+      if (currentItems.length === 0) {
+        sound.playError();
+        setManualSyncNotice({
+          type: 'error',
+          message: 'No hay productos en memoria ni en almacenamiento local para sincronizar.',
+        });
+        setIsManualSyncing(false);
+        return;
+      }
+
+      // 2. Realizar UPSERT masivo directo en 'audit_items' asegurando cantidades reales y PIN
+      const result = await syncAllCountsToSupabase(session.pin, currentItems, session.auditorName);
+
+      if (result.success) {
+        sound.playSuccess();
+        clearPendingCounts(session.pin);
+        setPendingSyncCount(0);
+
+        // Refrescar y fusionar conteos de Supabase para confirmar paridad total
+        try {
+          const refreshed = await fetchSessionCountsFromSupabase(session.pin);
+          if (refreshed.length > 0) {
+            setItems((prev) => applyRemoteCountsToItems(prev, refreshed));
+          }
+        } catch (rErr) {
+          console.warn('Aviso refrescando conteos tras sync manual:', rErr);
+        }
+
+        setManualSyncNotice({
+          type: 'success',
+          message: `✓ Sincronización manual completada con éxito: ${result.syncedCount} producto(s) sincronizado(s) con Supabase bajo el PIN ${session.pin}.`,
+          count: result.syncedCount,
+        });
+
+        setTimeout(() => {
+          setManualSyncNotice((prev) => (prev?.type === 'success' ? null : prev));
+        }, 6000);
+      } else {
+        sound.playError();
+        setManualSyncNotice({
+          type: 'error',
+          message: `Error al sincronizar con Supabase: ${result.error || 'Fallo desconocido'}. Verifica tu conexión.`,
+        });
+      }
+    } catch (err: any) {
+      sound.playError();
+      setManualSyncNotice({
+        type: 'error',
+        message: `Excepción durante la sincronización: ${err?.message || String(err)}`,
+      });
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
+
+  // REQUISITO 3: Función auxiliar para fusionar conteos remotos de Supabase en una lista de QuantItem
+  const applyRemoteCountsToItems = (
+    baseItems: QuantItem[],
+    remoteCounts: RealtimeCountUpdate[]
+  ): QuantItem[] => {
+    if (!remoteCounts || remoteCounts.length === 0) return baseItems;
+
+    const prodMap = new Map<number, RealtimeCountUpdate>();
+    const quantMap = new Map<number, RealtimeCountUpdate>();
+    for (const c of remoteCounts) {
+      if (c.productId) prodMap.set(c.productId, c);
+      if (c.quantId) quantMap.set(c.quantId, c);
+    }
+
+    return baseItems.map((item) => {
+      const remote = prodMap.get(item.productId) || quantMap.get(item.id);
+      if (remote) {
+        const counted = Number(remote.countedQuantity);
+        const sysQty = remote.systemQuantity !== undefined && remote.systemQuantity !== null
+          ? Number(remote.systemQuantity)
+          : item.quantity;
+        return {
+          ...item,
+          quantity: sysQty,
+          countedQuantity: counted,
+          difference: Math.round((counted - sysQty) * 1000) / 1000,
+          isLocked: remote.isLocked ?? item.isLocked,
+          lastAuditedBy: remote.auditorName || item.lastAuditedBy,
+          lastAuditedAt: remote.timestamp || item.lastAuditedAt,
+          countHistory: remote.countHistory && remote.countHistory.length > 0 ? remote.countHistory : item.countHistory,
+          photoUrl: remote.photoUrl || item.photoUrl,
+          notes: remote.notes || item.notes,
+        };
+      }
+      return item;
+    });
   };
 
   // Cargar catálogo de categorías desde Odoo o Demo con persistencia local para modo offline
@@ -594,14 +711,24 @@ export default function App() {
       if (hasPriorInventory) {
         setIsCategoryModalOpen(false);
         if (items.length === 0) {
-          if (offlineCatalog && offlineCatalog.length > 0) {
-            setItems(offlineCatalog);
-          } else if (hasCategories) {
-            const catFilter = session.categoryIds && session.categoryIds.length > 0
-              ? session.categoryIds
-              : session.categoryId;
-            loadInventoryData(odooConfig, session.locationId, isDemoMode, catFilter);
-          }
+          (async () => {
+            const remoteCounts = await fetchSessionCountsFromSupabase(session.pin);
+            if (offlineCatalog && offlineCatalog.length > 0) {
+              const merged = applyRemoteCountsToItems(offlineCatalog, remoteCounts);
+              setItems(merged);
+            } else if (hasCategories) {
+              const catFilter = session.categoryIds && session.categoryIds.length > 0
+                ? session.categoryIds
+                : session.categoryId;
+              loadInventoryData(odooConfig, session.locationId, isDemoMode, catFilter, remoteCounts);
+            } else {
+              const supaItems = await fetchAuditItemsAsQuantItems(session.pin);
+              if (supaItems.length > 0) {
+                const merged = applyRemoteCountsToItems(supaItems, remoteCounts);
+                setItems(merged);
+              }
+            }
+          })();
         }
         return;
       }
@@ -1236,24 +1363,37 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between">
         <AuthForm
-          onSessionStarted={(newSession, config, isDemo, initialCounts, initialCustomItems) => {
+          onSessionStarted={async (newSession, config, isDemo, initialCounts, initialCustomItems) => {
             setIsDemoMode(isDemo);
             setOdooConfig(config);
             setSession(newSession);
 
+            // REQUISITO 3: Consultar registros previos en Supabase para reflejar inmediatamente el avance real de los productos auditados
+            let effectiveCounts = initialCounts || [];
+            if (effectiveCounts.length === 0) {
+              try {
+                effectiveCounts = await fetchSessionCountsFromSupabase(newSession.pin);
+              } catch (e) {
+                console.warn('Aviso cargando conteos iniciales de Supabase:', e);
+              }
+            }
+
             if (initialCustomItems && initialCustomItems.length > 0) {
-              // REQUISITO: Cargar directamente los productos elegidos del inventario multi-departamento o previo
-              setItems(initialCustomItems);
-              saveOfflineCatalog(newSession.pin, initialCustomItems);
+              // Cargar directamente los productos elegidos y fusionar conteos reales de Supabase
+              const merged = applyRemoteCountsToItems(initialCustomItems, effectiveCounts);
+              setItems(merged);
+              saveOfflineCatalog(newSession.pin, merged);
               setIsCategoryModalOpen(false);
               return;
             }
 
             // ACCESO DIRECTO AUTOMÁTICO POR PIN:
-            // Si ya existe catálogo offline para este PIN, usarlo de inmediato sin mostrar selector
+            // Si ya existe catálogo offline para este PIN, fusionar conteos de Supabase y reflejarlos de inmediato
             const existingOffline = loadOfflineCatalog(newSession.pin);
             if (existingOffline && existingOffline.length > 0) {
-              setItems(existingOffline);
+              const merged = applyRemoteCountsToItems(existingOffline, effectiveCounts);
+              setItems(merged);
+              saveOfflineCatalog(newSession.pin, merged);
               setIsCategoryModalOpen(false);
               return;
             }
@@ -1264,14 +1404,29 @@ export default function App() {
               try {
                 const parsed = JSON.parse(savedCustom);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                  setItems(parsed);
-                  saveOfflineCatalog(newSession.pin, parsed);
+                  const merged = applyRemoteCountsToItems(parsed, effectiveCounts);
+                  setItems(merged);
+                  saveOfflineCatalog(newSession.pin, merged);
                   setIsCategoryModalOpen(false);
                   return;
                 }
               } catch (e) {
                 console.warn('Error parsing saved custom inventory:', e);
               }
+            }
+
+            // REQUISITO 3: Si no hay catálogo en este dispositivo, consultar directamente en audit_items de Supabase
+            try {
+              const supaItems = await fetchAuditItemsAsQuantItems(newSession.pin);
+              if (supaItems && supaItems.length > 0) {
+                const merged = applyRemoteCountsToItems(supaItems, effectiveCounts);
+                setItems(merged);
+                saveOfflineCatalog(newSession.pin, merged);
+                setIsCategoryModalOpen(false);
+                return;
+              }
+            } catch (errSupa) {
+              console.warn('Aviso cargando audit_items desde Supabase:', errSupa);
             }
 
             setItems([]); // Limpiar la lista anterior explícitamente
@@ -1284,11 +1439,11 @@ export default function App() {
 
             if (sessionCat) {
               setIsCategoryModalOpen(false);
-              loadInventoryData(config, newSession.locationId, isDemo, sessionCat, initialCounts);
-            } else if (initialCounts && initialCounts.length > 0) {
+              loadInventoryData(config, newSession.locationId, isDemo, sessionCat, effectiveCounts);
+            } else if (effectiveCounts && effectiveCounts.length > 0) {
               // Si ya habían conteos registrados para este PIN en Supabase pero sin categoría explícita, no abrir modal
               setIsCategoryModalOpen(false);
-              loadInventoryData(config, newSession.locationId, isDemo, undefined, initialCounts);
+              loadInventoryData(config, newSession.locationId, isDemo, undefined, effectiveCounts);
             } else {
               // Si aún no tiene categoría ni inventario previo, abrir el modal obligatorio de selección
               loadCategoriesOnly(config, isDemo);
@@ -1313,12 +1468,42 @@ export default function App() {
         isOnline={isOnline}
         pendingSyncCount={pendingSyncCount}
         onTriggerPendingSync={triggerAutoResync}
+        onManualSync={handleManualSync}
+        isManualSyncing={isManualSyncing}
         auditors={auditors}
         onLogout={handleLogout}
         onLeaveSession={handleLogout}
         onOpenSyncModal={() => setShowRealtimeModal(true)}
         onOpenOdooModal={() => setShowOdooConfigModal(true)}
       />
+
+      {/* REQUISITO 2: Alerta / Notificación Visual de Sincronización Manual */}
+      {manualSyncNotice && (
+        <div
+          className={`border-b text-xs font-semibold px-4 py-2.5 flex items-center justify-between gap-3 shadow-xs animate-in fade-in transition-all duration-300 ${
+            manualSyncNotice.type === 'success'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+              : 'bg-rose-50 border-rose-300 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {manualSyncNotice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span className="truncate">{manualSyncNotice.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setManualSyncNotice(null)}
+            className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+            title="Cerrar notificación"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Aviso discreto persistente de Modo Offline (Sin conexión) */}
       {!isOnline && (

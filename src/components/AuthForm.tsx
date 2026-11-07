@@ -41,7 +41,7 @@ import {
   SupabaseSettings
 } from '../lib/supabase';
 import { sound } from '../lib/audio';
-import { loadOfflineCatalog } from '../lib/offlineSync';
+import { loadOfflineCatalog, saveOfflineCatalog, mergeAuditItems, getPendingCounts } from '../lib/offlineSync';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface AuthFormProps {
@@ -492,14 +492,29 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSessionStarted, savedConfi
           uid: authenticatedUid || getCachedUid() || undefined,
         };
 
+        // REQUISITO 1: Fusionar dinámicamente registros previos del servidor con datos locales
+        const localCandidate = customItems || localOfflineItems || [];
+        const pendingQueue = getPendingCounts(cleanPin);
+        let finalMergedItems: QuantItem[] | undefined;
+
+        if (checkResult.items && checkResult.items.length > 0) {
+          finalMergedItems = mergeAuditItems(localCandidate, checkResult.items, pendingQueue);
+        } else if (localCandidate.length > 0) {
+          finalMergedItems = localCandidate;
+        }
+
+        if (finalMergedItems && finalMergedItems.length > 0) {
+          saveOfflineCatalog(cleanPin, finalMergedItems);
+        }
+
         sound.playSuccess();
-        // Redirigir directamente al panel de conteo y auditoría omitiendo selectores
+        // Redirigir directamente al panel de conteo y auditoría con los datos fusionados
         onSessionStarted(
           session,
           finalConfig,
           false,
           checkResult.counts,
-          customItems || localOfflineItems || undefined
+          finalMergedItems
         );
         return;
       }

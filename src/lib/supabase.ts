@@ -387,6 +387,7 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
   if (client) {
     const pId = Number(update.productId || update.quantId);
     const qId = Number(update.quantId || update.productId);
+    const realCount = Number(update.countedQuantity);
 
     try {
       // 3.1 Intentar UPSERT en 'audit_items' con esquema enriquecido
@@ -399,8 +400,8 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
         pin: update.pin,
         product_id: pId,
         quant_id: qId,
-        counted_quantity: update.countedQuantity,
-        qty: update.countedQuantity,
+        counted_quantity: realCount, // NUNCA FIJO EN CERO: valor real ingresado
+        qty: realCount,
         is_locked: update.isLocked ?? false,
         auditor_name: update.auditorName,
         photo_url: update.photoUrl || null,
@@ -418,7 +419,8 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
       // Si la columna qty en Supabase fue configurada como integer (código de error 22P02),
       // reintentar redondeando qty pero conservando el valor decimal exacto de hasta 3 dígitos en counted_quantity
       if (itemError && (itemError.code === '22P02' || itemError.message?.includes('integer'))) {
-        enrichedRecord.qty = Math.round(update.countedQuantity);
+        enrichedRecord.qty = Math.round(realCount);
+        enrichedRecord.counted_quantity = realCount;
         const resRetry = await client
           .from('audit_items')
           .upsert(enrichedRecord, { onConflict: 'pin,product_id' });
@@ -431,7 +433,8 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
           id: `${update.pin}_${pId}`,
           pin: update.pin,
           product_id: pId,
-          qty: Math.round(update.countedQuantity),
+          counted_quantity: realCount, // NUNCA FIJO EN CERO: número real ingresado
+          qty: realCount,
           is_locked: update.isLocked ?? false,
           updated_at: update.timestamp,
         };
@@ -447,7 +450,8 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
           id: `${update.pin}_${pId}`,
           pin: update.pin,
           product_id: pId,
-          qty: Math.round(update.countedQuantity),
+          counted_quantity: realCount, // NUNCA FIJO EN CERO: número real ingresado
+          qty: realCount,
           is_locked: update.isLocked ?? false,
           updated_at: update.timestamp,
         };
@@ -477,7 +481,8 @@ export async function broadcastCountUpdate(update: RealtimeCountUpdate): Promise
         product_id: pId,
         product_name: update.productName || null,
         barcode: update.barcode || null,
-        qty: update.countedQuantity,
+        counted_quantity: realCount, // NUNCA FIJO EN CERO
+        qty: realCount,
         auditor_name: update.auditorName,
         updated_at: update.timestamp,
       }, { onConflict: 'pin,quant_id' });
@@ -561,6 +566,7 @@ export async function checkSessionExistsInSupabase(pin: string): Promise<{
           .from(table)
           .select('*')
           .eq('pin', pin)
+          .range(0, 4999)
           .order('updated_at', { ascending: false });
 
         if (!countsErr && countsData && countsData.length > 0) {
@@ -666,6 +672,7 @@ export async function fetchSessionCountsFromSupabase(pin: string): Promise<Realt
       .from('audit_items')
       .select('*')
       .eq('pin', pin)
+      .range(0, 4999)
       .order('updated_at', { ascending: false });
 
     if (!itemsError && itemsData && itemsData.length > 0) {
@@ -700,6 +707,7 @@ export async function fetchSessionCountsFromSupabase(pin: string): Promise<Realt
       .from('audit_counts')
       .select('*')
       .eq('pin', pin)
+      .range(0, 4999)
       .order('updated_at', { ascending: false });
 
     if (!countsError && countsData && countsData.length > 0) {
@@ -916,13 +924,14 @@ export async function updateSessionCategoriesInSupabase(
 }
 
 /**
- * Inserta o actualiza en lote todos los productos pertenecientes a las categorías combinadas
- * dentro de la tabla 'audit_items' en Supabase bajo el mismo PIN de auditoría.
+ * Inserta o actualiza en lote productos en la tabla 'audit_items' en Supabase bajo el PIN de auditoría.
+ * NUNCA sobrescribe con 0 las cantidades contadas reales si un producto ya fue auditado previamente.
  */
 export async function saveAuditItemsToSupabase(
   pin: string,
   items: QuantItem[],
-  auditorName: string = 'Auditor'
+  auditorName: string = 'Auditor',
+  isManualSync: boolean = false
 ): Promise<{ success: boolean; insertedCount: number; error?: string }> {
   if (!pin || !items || items.length === 0) {
     return { success: true, insertedCount: 0 };
@@ -935,23 +944,75 @@ export async function saveAuditItemsToSupabase(
 
   try {
     const now = new Date().toISOString();
+
+    // Consultar registros ya existentes en Supabase para este PIN
+    // Esto garantiza que si se está registrando un catálogo inicial o recargando categorías,
+    // NUNCA sobreescribamos con 0 una cantidad contada real previamente guardada por un auditor.
+    const existingMap = new Map<number, any>();
+    try {
+      const { data: existingRows } = await client
+        .from('audit_items')
+        .select('product_id, quant_id, counted_quantity, qty, is_locked, auditor_name, updated_at, notes, photo_url')
+        .eq('pin', pin)
+        .range(0, 4999);
+
+      if (existingRows && existingRows.length > 0) {
+        for (const row of existingRows) {
+          if (row.product_id) existingMap.set(Number(row.product_id), row);
+          if (row.quant_id) existingMap.set(Number(row.quant_id), row);
+        }
+      }
+    } catch (e) {
+      console.warn('Aviso leyendo audit_items previos en Supabase:', e);
+    }
+
     // Mapear cada producto a registro compatible con la tabla audit_items
-    const records = items.map((item) => ({
-      id: `${pin}_${item.productId || item.id}`,
-      pin,
-      product_id: item.productId || item.id,
-      quant_id: item.id || null,
-      product_name: item.productName || null,
-      barcode: item.barcode || null,
-      system_quantity: item.quantity,
-      counted_quantity: item.countedQuantity || 0,
-      qty: Math.round(item.countedQuantity || 0),
-      is_locked: item.isLocked ?? false,
-      auditor_name: item.lastAuditedBy || auditorName,
-      photo_url: item.photoUrl || null,
-      notes: item.notes || null,
-      updated_at: item.lastAuditedAt || now,
-    }));
+    const records = items.map((item) => {
+      const pId = Number(item.productId || item.id);
+      const qId = Number(item.id || item.productId);
+      const existing = existingMap.get(pId) || existingMap.get(qId);
+
+      // Determinar la cantidad contada real (nunca fija en cero)
+      let finalCounted = Number(item.countedQuantity || 0);
+
+      // Si es sincronización manual o el item fue auditado localmente (tiene fecha de conteo o count > 0)
+      if (isManualSync || item.lastAuditedAt || finalCounted > 0) {
+        finalCounted = Number(item.countedQuantity || 0);
+      } else if (existing) {
+        // Si no fue auditado en esta pasada local pero Supabase YA tenía un conteo previo, PRESERVARLO
+        const prevCount = Number(existing.counted_quantity ?? existing.qty ?? 0);
+        if (prevCount > 0) {
+          finalCounted = prevCount;
+          // Actualizar también en el objeto en memoria para que no se quede en cero
+          item.countedQuantity = prevCount;
+          item.difference = Math.round((prevCount - item.quantity) * 1000) / 1000;
+          if (existing.auditor_name) item.lastAuditedBy = existing.auditor_name;
+          if (existing.updated_at) item.lastAuditedAt = existing.updated_at;
+          if (existing.is_locked !== undefined) item.isLocked = Boolean(existing.is_locked);
+        }
+      }
+
+      const notesToSave = item.countHistory && item.countHistory.length > 0
+        ? encodeCountHistory(item.countHistory, item.notes)
+        : (item.notes || existing?.notes || null);
+
+      return {
+        id: `${pin}_${pId}`,
+        pin: pin.trim(),
+        product_id: pId,
+        quant_id: qId,
+        product_name: item.productName || null,
+        barcode: item.barcode || null,
+        system_quantity: item.quantity,
+        counted_quantity: finalCounted, // NUNCA FIJO EN CERO: valor real
+        qty: finalCounted,
+        is_locked: item.isLocked ?? (existing ? Boolean(existing.is_locked) : false),
+        auditor_name: item.lastAuditedBy || existing?.auditor_name || auditorName,
+        photo_url: item.photoUrl || existing?.photo_url || null,
+        notes: notesToSave,
+        updated_at: item.lastAuditedAt || existing?.updated_at || now,
+      };
+    });
 
     // Insertar en fragmentos de 100 para garantizar alta velocidad y evitar límites de payload
     const chunkSize = 100;
@@ -969,6 +1030,17 @@ export async function saveAuditItemsToSupabase(
         error = resId.error;
       }
 
+      if (error && (error.code === '22P02' || error.message?.includes('integer'))) {
+        const safeChunk = chunk.map((c) => ({
+          ...c,
+          qty: Math.round(c.counted_quantity),
+        }));
+        const resSafe = await client
+          .from('audit_items')
+          .upsert(safeChunk, { onConflict: 'pin,product_id' });
+        error = resSafe.error;
+      }
+
       if (error) {
         console.warn('Nota guardando lote en audit_items:', error.message);
       }
@@ -979,6 +1051,178 @@ export async function saveAuditItemsToSupabase(
     console.warn('Advertencia al insertar productos combinados en audit_items de Supabase:', err);
     return { success: false, insertedCount: 0, error: err?.message || String(err) };
   }
+}
+
+/**
+ * REQUISITO 2: Sincronización Manual Masiva
+ * Toma todos los conteos acumulados localmente en el dispositivo y realiza un 'upsert' masivo
+ * hacia Supabase asegurando que las cantidades contadas reales y los pines coincidan exactamente.
+ */
+export async function syncAllCountsToSupabase(
+  pin: string,
+  items: QuantItem[],
+  auditorName: string = 'Auditor'
+): Promise<{ success: boolean; syncedCount: number; error?: string }> {
+  if (!pin) {
+    return { success: false, syncedCount: 0, error: 'PIN no especificado' };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, syncedCount: 0, error: 'Cliente de Supabase no disponible o credenciales no configuradas' };
+  }
+
+  if (!items || items.length === 0) {
+    return { success: true, syncedCount: 0 };
+  }
+
+  try {
+    const now = new Date().toISOString();
+    const cleanPin = pin.trim();
+
+    // Mapear cada producto con su conteo real acumulado en el dispositivo
+    const records = items.map((item) => {
+      const pId = Number(item.productId || item.id);
+      const qId = Number(item.id || item.productId);
+      const realCount = Number(item.countedQuantity || 0);
+
+      const notesToSave = item.countHistory && item.countHistory.length > 0
+        ? encodeCountHistory(item.countHistory, item.notes)
+        : (item.notes || null);
+
+      return {
+        id: `${cleanPin}_${pId}`,
+        pin: cleanPin,
+        product_id: pId,
+        quant_id: qId,
+        product_name: item.productName || null,
+        barcode: item.barcode || null,
+        system_quantity: item.quantity,
+        counted_quantity: realCount, // NUNCA FIJO EN CERO: valor real ingresado
+        qty: realCount,
+        is_locked: item.isLocked ?? false,
+        auditor_name: item.lastAuditedBy || auditorName,
+        photo_url: item.photoUrl || null,
+        notes: notesToSave,
+        updated_at: item.lastAuditedAt || now,
+      };
+    });
+
+    // Realizar UPSERT en bloques de 100
+    const chunkSize = 100;
+    let totalSynced = 0;
+
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      let { error } = await client
+        .from('audit_items')
+        .upsert(chunk, { onConflict: 'pin,product_id' });
+
+      if (error && (error.code === '42P10' || error.message?.includes('conflict') || error.message?.includes('constraint'))) {
+        const resId = await client
+          .from('audit_items')
+          .upsert(chunk, { onConflict: 'id' });
+        error = resId.error;
+      }
+
+      if (error && (error.code === '22P02' || error.message?.includes('integer'))) {
+        const safeChunk = chunk.map((c) => ({
+          ...c,
+          qty: Math.round(c.counted_quantity),
+        }));
+        const resSafe = await client
+          .from('audit_items')
+          .upsert(safeChunk, { onConflict: 'pin,product_id' });
+        error = resSafe.error;
+      }
+
+      if (error) {
+        console.error('Error en lote de sincronización manual masiva:', error);
+        throw new Error(error.message);
+      }
+
+      totalSynced += chunk.length;
+    }
+
+    // Sincronizar también en audit_counts como respaldo de retrocompatibilidad
+    try {
+      const countRecords = items.map((item) => ({
+        id: `${cleanPin}_${item.id || item.productId}`,
+        pin: cleanPin,
+        quant_id: Number(item.id || item.productId),
+        product_id: Number(item.productId || item.id),
+        product_name: item.productName || null,
+        barcode: item.barcode || null,
+        counted_quantity: Number(item.countedQuantity || 0),
+        qty: Number(item.countedQuantity || 0),
+        auditor_name: item.lastAuditedBy || auditorName,
+        updated_at: item.lastAuditedAt || now,
+      }));
+
+      for (let i = 0; i < countRecords.length; i += chunkSize) {
+        const chunk = countRecords.slice(i, i + chunkSize);
+        await client.from('audit_counts').upsert(chunk, { onConflict: 'pin,quant_id' });
+      }
+    } catch {
+      // noop
+    }
+
+    return { success: true, syncedCount: totalSynced };
+  } catch (err: any) {
+    console.error('Error en syncAllCountsToSupabase:', err);
+    return { success: false, syncedCount: 0, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * REQUISITO 3: Carga Inicial de Productos directamente desde Supabase por PIN
+ * Permite que cualquier dispositivo refleje inmediatamente el avance real de los productos auditados
+ */
+export async function fetchAuditItemsAsQuantItems(pin: string): Promise<QuantItem[]> {
+  const client = getSupabaseClient();
+  if (!client || !pin) return [];
+
+  try {
+    const { data, error } = await client
+      .from('audit_items')
+      .select('*')
+      .eq('pin', pin.trim())
+      .range(0, 4999)
+      .order('updated_at', { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return data.map((row: any) => {
+        const { history, cleanNotes } = decodeCountHistory(row.notes);
+        const counted = Number(row.counted_quantity !== undefined && row.counted_quantity !== null ? row.counted_quantity : (row.qty ?? 0));
+        const sysQty = Number(row.system_quantity ?? 0);
+        return {
+          id: Number(row.quant_id || row.product_id),
+          productId: Number(row.product_id || row.quant_id),
+          productName: row.product_name || `Producto #${row.product_id}`,
+          defaultCode: row.default_code || '',
+          barcode: row.barcode || '',
+          quantity: sysQty,
+          inventoryQuantity: sysQty,
+          countedQuantity: counted,
+          difference: Math.round((counted - sysQty) * 1000) / 1000,
+          isLocked: Boolean(row.is_locked),
+          locationId: 0,
+          locationName: '',
+          categId: undefined,
+          categName: '',
+          lastAuditedBy: row.auditor_name || undefined,
+          lastAuditedAt: row.updated_at || undefined,
+          photoUrl: row.photo_url || undefined,
+          notes: cleanNotes || undefined,
+          countHistory: history.length > 0 ? history : undefined,
+          syncedToOdoo: false,
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('Aviso recuperando audit_items como QuantItems:', err);
+  }
+  return [];
 }
 
 /**
