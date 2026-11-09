@@ -38,11 +38,11 @@ export function sanitizeOdooUrl(rawUrl: string): string {
  * Elimina corchetes [ y ], comillas simples/dobles y espacios residuales
  * Ejemplo: "[REF-9940]" -> "REF-9940"
  */
-export function cleanCode(val?: string | null): string {
-  if (!val) return '';
-  return String(val)
-    .replace(/[\[\]"']/g, '')
-    .trim();
+export function cleanCode(val?: any): string {
+  if (val === undefined || val === null || val === false) return '';
+  const str = String(val).replace(/[\[\]"']/g, '').trim();
+  if (str === 'false' || str === 'None' || str === 'null' || str === 'undefined' || str === '-') return '';
+  return str;
 }
 
 // 1. Guardar el UID de usuario en memoria y en localStorage
@@ -885,49 +885,63 @@ export async function fetchQuants(
 
   let items = Array.from(itemsByProduct.values());
 
-  // 6. Si quedaron productos sin barcode y faltan datos de catálogo, enriquecer de forma segura
-  const missingBarcodeItems = items.filter((i) => !i.barcode && i.productId > 0 && !catalogMap.has(i.productId));
-  if (missingBarcodeItems.length > 0) {
+  // 6. REQUISITO CRÍTICO: Enriquecer TODOS los productos que no tengan barcode o default_code oficial de Odoo
+  const itemsNeedingData = items.filter((i) => (!i.barcode || !i.defaultCode) && i.productId > 0);
+  if (itemsNeedingData.length > 0) {
     try {
-      const missingIds = Array.from(new Set(missingBarcodeItems.map((i) => i.productId)));
-      const extraProds = await executeJsonRpc<Array<{
-        id: number;
-        default_code?: string | false;
-        barcode?: string | false;
-        categ_id?: [number, string] | false;
-      }>>(
-        config,
-        'object',
-        'execute_kw',
-        [
-          db,
-          uid,
-          apiKey,
-          'product.product',
-          'search_read',
-          [[['id', 'in', missingIds]]],
-        ],
-        {
-          fields: ['id', 'default_code', 'barcode', 'categ_id'],
-          limit: 0, // Sin truncar
-          context: companyContext,
-        }
-      );
+      const missingIds = Array.from(new Set(itemsNeedingData.map((i) => i.productId)));
+      const batchSize = 100;
+      for (let b = 0; b < missingIds.length; b += batchSize) {
+        const batchIds = missingIds.slice(b, b + batchSize);
+        const extraProds = await executeJsonRpc<Array<{
+          id: number;
+          name?: string;
+          display_name?: string;
+          default_code?: string | false;
+          barcode?: string | false;
+          categ_id?: [number, string] | number | false;
+        }>>(
+          config,
+          'object',
+          'execute_kw',
+          [
+            db,
+            uid,
+            apiKey,
+            'product.product',
+            'search_read',
+            [[['id', 'in', batchIds]]],
+          ],
+          {
+            fields: ['id', 'name', 'display_name', 'default_code', 'barcode', 'categ_id'],
+            limit: 0,
+            context: companyContext,
+          }
+        ).catch(() => []);
 
-      const extraMap = new Map(extraProds.map((p) => [p.id, p]));
-      for (const item of items) {
-        const ep = extraMap.get(item.productId);
-        if (ep) {
-          if (ep.barcode && !item.barcode) item.barcode = cleanCode(String(ep.barcode));
-          if (ep.default_code && !item.defaultCode) item.defaultCode = cleanCode(String(ep.default_code));
-          if (Array.isArray(ep.categ_id) && !item.categId) {
-            item.categId = ep.categ_id[0];
-            item.categName = ep.categ_id[1];
+        if (extraProds && extraProds.length > 0) {
+          const extraMap = new Map(extraProds.map((p) => [p.id, p]));
+          for (const item of items) {
+            const ep = extraMap.get(item.productId);
+            if (ep) {
+              const epBarcode = cleanCode(ep.barcode);
+              if (epBarcode && !item.barcode) {
+                item.barcode = epBarcode;
+              }
+              const epDefaultCode = cleanCode(ep.default_code);
+              if (epDefaultCode && !item.defaultCode) {
+                item.defaultCode = epDefaultCode;
+              }
+              if (Array.isArray(ep.categ_id) && !item.categId) {
+                item.categId = ep.categ_id[0];
+                item.categName = ep.categ_id[1];
+              }
+            }
           }
         }
       }
-    } catch {
-      // Ignorar fallo secundario de enriquecimiento
+    } catch (enrichErr) {
+      console.warn('Aviso enriqueciendo datos de barcode/default_code desde Odoo:', enrichErr);
     }
   }
 

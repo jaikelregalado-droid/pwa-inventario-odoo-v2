@@ -24,13 +24,36 @@ export function exportAuditToExcel(
       status = `Sobrante (+${q.difference})`;
     }
 
+    // Extraer posible referencia entre corchetes del nombre del producto si existe: ej. "[REF-001] Tomate"
+    const bracketMatch = q.productName ? q.productName.match(/^\[(.*?)\]/) : null;
+    const bracketCode = bracketMatch ? bracketMatch[1].trim() : '';
+
+    // 1. Referencia Interna de Odoo (campo 'default_code' o extraída de corchetes)
+    // NUNCA ID interno numérico (productId / id)
+    const rawRef = (q.defaultCode || bracketCode || '').trim();
+    const internalReference = (rawRef && rawRef !== '-' && rawRef !== 'false' && rawRef !== 'null') ? rawRef : '-';
+
+    // 2. REQUISITO CRÍTICO: Código de Barras Oficial del Sistema (campo 'barcode' de Odoo, ej: 607869262442)
+    // NUNCA debe tomar un ID interno de base de datos ni la referencia interna.
+    let officialBarcode = '-';
+    if (q.barcode !== undefined && q.barcode !== null) {
+      const bStr = String(q.barcode).trim();
+      if (bStr && bStr !== '-' && bStr !== 'false' && bStr !== 'None' && bStr !== 'null' && bStr !== 'undefined') {
+        // Descartar si por error fuera idéntico a un ID interno secuencial corto de base de datos
+        const isDbId = (bStr === String(q.id) || bStr === String(q.productId)) && bStr.length < 7;
+        if (!isDbId) {
+          officialBarcode = bStr;
+        }
+      }
+    }
+
     return {
       'ID Quant (Odoo)': q.id,
-      'Referencia Interna': q.defaultCode || '-',
-      'Código de Barras': q.barcode || '-',
+      'Referencia Interna': internalReference,
+      'Código de Barras': officialBarcode,
       'Producto': q.productName,
       'Categoría': q.categName || 'General',
-      'Ubicación': q.locationName,
+      'Ubicación': q.locationName || locationName,
       'QS (Sistema Odoo)': q.quantity,
       'QC (Físico Contado)': q.countedQuantity,
       'DQ (Diferencia)': q.difference,
@@ -44,12 +67,35 @@ export function exportAuditToExcel(
   // Crear hoja de cálculo
   const worksheet = XLSX.utils.json_to_sheet(rows);
 
+  // Asegurar formato de texto plano ('@') para Código de Barras (columna C) y Referencia (columna B)
+  // evitando notación científica (ej. 6.07869E+11) o pérdida de ceros iniciales
+  const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:M1');
+  for (let r = range.s.r + 1; r <= range.e.r; r++) {
+    // Columna B: Referencia Interna
+    const refCellRef = XLSX.utils.encode_cell({ r, c: 1 });
+    const refCell = worksheet[refCellRef];
+    if (refCell && refCell.v !== undefined && refCell.v !== null) {
+      refCell.t = 's';
+      refCell.z = '@';
+      refCell.v = String(refCell.v);
+    }
+
+    // Columna C: Código de Barras oficial
+    const barcodeCellRef = XLSX.utils.encode_cell({ r, c: 2 });
+    const barcodeCell = worksheet[barcodeCellRef];
+    if (barcodeCell && barcodeCell.v !== undefined && barcodeCell.v !== null) {
+      barcodeCell.t = 's';
+      barcodeCell.z = '@';
+      barcodeCell.v = String(barcodeCell.v);
+    }
+  }
+
   // Ajustar ancho de columnas
   worksheet['!cols'] = [
     { wch: 14 }, // ID Quant
-    { wch: 18 }, // Ref
-    { wch: 18 }, // Barcode
-    { wch: 38 }, // Producto
+    { wch: 20 }, // Ref
+    { wch: 24 }, // Barcode oficial
+    { wch: 42 }, // Producto
     { wch: 22 }, // Categoría
     { wch: 26 }, // Ubicación
     { wch: 16 }, // QS

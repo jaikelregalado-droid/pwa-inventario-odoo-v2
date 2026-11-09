@@ -66,22 +66,22 @@ export const SessionBar: React.FC<SessionBarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-      <div className="max-w-5xl mx-auto px-3 py-2 flex items-center justify-between gap-2">
+      <div className="max-w-5xl mx-auto px-2 sm:px-3 py-1.5 sm:py-2 flex items-center justify-between gap-1.5 sm:gap-2">
         {/* Lado izquierdo: PIN y Compañía */}
-        <div className="flex items-center gap-2 min-w-0">
-          {/* Badge del PIN con botón de copia rápido */}
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink-0">
+          {/* Badge del PIN con botón de copia rápido (protegido contra encogimiento) */}
           <button
             onClick={handleCopyPin}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#7C3AED]/10 hover:bg-[#7C3AED]/15 border border-[#7C3AED]/30 text-[#7C3AED] transition active:scale-95 cursor-pointer shadow-sm"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-[#7C3AED]/10 hover:bg-[#7C3AED]/15 border border-[#7C3AED]/30 text-[#7C3AED] transition active:scale-95 cursor-pointer shadow-xs sm:shadow-sm shrink-0"
             title="Toca para copiar el PIN de la sesión"
           >
-            <Radio className="w-3.5 h-3.5 text-[#7C3AED] animate-pulse" />
+            <Radio className="w-3.5 h-3.5 text-[#7C3AED] animate-pulse shrink-0" />
             <span className="text-[10px] uppercase font-bold tracking-wider text-[#7C3AED]">PIN:</span>
-            <span className="font-mono text-sm font-black text-[#7C3AED] tracking-widest">{session.pin}</span>
+            <span className="font-mono text-xs sm:text-sm font-black text-[#7C3AED] tracking-wider sm:tracking-widest">{session.pin}</span>
             {copied ? (
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
+              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             ) : (
-              <Copy className="w-3.5 h-3.5 text-[#7C3AED]/70" />
+              <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#7C3AED]/70 shrink-0" />
             )}
           </button>
 
@@ -102,33 +102,33 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           </div>
         </div>
 
-        {/* Lado derecho: Estado de Conexión, Auditores en Vivo, Mute y Acciones */}
-        <div className="flex items-center gap-1.5">
+        {/* Lado derecho: Estado de Conexión, Sincronización Manual, Auditores, etc. */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Etiqueta visual de Modo Offline o botón de pendientes */}
           {!isOnline ? (
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-bold shadow-sm animate-pulse"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-[10px] sm:text-[11px] font-bold shadow-xs sm:shadow-sm animate-pulse shrink-0"
               title="Sin conexión a internet. Los cambios se guardan localmente."
             >
-              <WifiOff className="w-3.5 h-3.5 text-amber-600" />
-              <span>Modo Offline{pendingSyncCount > 0 ? ` (${pendingSyncCount})` : ''}</span>
+              <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>Offline{pendingSyncCount > 0 ? ` (${pendingSyncCount})` : ''}</span>
             </div>
           ) : pendingSyncCount > 0 ? (
             <button
               type="button"
               onClick={onTriggerPendingSync}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-[#7C3AED]/40 text-[#7C3AED] text-[11px] font-bold shadow-sm cursor-pointer transition active:scale-95"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-[#7C3AED]/40 text-[#7C3AED] text-[10px] sm:text-[11px] font-bold shadow-xs sm:shadow-sm cursor-pointer transition active:scale-95 shrink-0"
               title="Hay conteos pendientes de enviar a Supabase. Toca para sincronizar."
             >
-              <Radio className="w-3.5 h-3.5 text-[#7C3AED] animate-spin" />
-              <span>Sincronizar ({pendingSyncCount})</span>
+              <Radio className="w-3.5 h-3.5 text-[#7C3AED] animate-spin shrink-0" />
+              <span>Sync ({pendingSyncCount})</span>
             </button>
           ) : null}
 
           {/* Indicador de Estado WebSocket / Supabase */}
           <button
             onClick={onOpenSyncModal}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-medium transition cursor-pointer shadow-sm ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-xl border text-[11px] font-medium transition cursor-pointer shadow-xs sm:shadow-sm shrink-0 ${
               connectionStatus === 'connected'
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/70'
                 : connectionStatus === 'connecting'
@@ -140,49 +140,55 @@ export const SessionBar: React.FC<SessionBarProps> = ({
             title="Configuración de Supabase Realtime"
           >
             {connectionStatus === 'connected' ? (
-              <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+              <Wifi className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             ) : connectionStatus === 'local_only' ? (
-              <Radio className="w-3.5 h-3.5 text-[#7C3AED]" />
+              <Radio className="w-3.5 h-3.5 text-[#7C3AED] shrink-0" />
             ) : (
-              <WifiOff className="w-3.5 h-3.5 text-amber-600" />
+              <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
             )}
-            <span className="hidden xs:inline">
+            <span className="hidden sm:inline">
               {connectionStatus === 'connected'
                 ? 'En Línea'
                 : connectionStatus === 'local_only'
-                ? 'Local/Pestañas'
+                ? 'Local'
                 : connectionStatus === 'connecting'
                 ? 'Conectando...'
-                : 'Desconectado'}
+                : 'Offline'}
             </span>
           </button>
 
-          {/* BOTÓN DE SINCRONIZACIÓN MANUAL (Requisito 2) */}
+          {/* BOTÓN DE SINCRONIZACIÓN MANUAL: Compacto en móviles, expandible en tablet/desktop */}
           {onManualSync && (
             <button
               type="button"
               onClick={onManualSync}
               disabled={isManualSyncing}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition active:scale-95 cursor-pointer shadow-sm select-none ${
+              className={`flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition active:scale-95 cursor-pointer shadow-xs sm:shadow-sm select-none shrink-0 ${
                 isManualSyncing
                   ? 'bg-purple-100 border-[#7C3AED] text-[#7C3AED] animate-pulse cursor-wait'
-                  : 'bg-white hover:bg-purple-50 border-[#CBD5E1] hover:border-[#7C3AED]/50 text-[#0F172A] hover:text-[#7C3AED]'
+                  : 'bg-white hover:bg-purple-50/80 border-[#CBD5E1] hover:border-[#7C3AED]/50 text-[#0F172A] hover:text-[#7C3AED]'
               }`}
               title="Tomar todos los conteos acumulados localmente y sincronizarlos con Supabase"
+              aria-label="Sincronizar Manualmente"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-[#7C3AED] shrink-0 ${isManualSyncing ? 'animate-spin' : ''}`} />
-              <span className="whitespace-nowrap font-bold">🔄 Sincronizar Manualmente</span>
+              <span className="hidden sm:inline font-bold text-[11px]">
+                {isManualSyncing ? 'Sincronizando...' : 'Sincronizar'}
+              </span>
+              <span className="hidden lg:inline font-bold text-[11px]">
+                {!isManualSyncing && ' Manual'}
+              </span>
             </button>
           )}
 
           {/* Recuento de Auditores en Vivo */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => setShowAuditorsList(!showAuditorsList)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#0F172A] text-xs font-semibold transition active:scale-95 cursor-pointer shadow-sm"
+              className="flex items-center gap-1 sm:gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#0F172A] text-xs font-semibold transition active:scale-95 cursor-pointer shadow-xs sm:shadow-sm shrink-0"
               title="Auditores conectados a este PIN"
             >
-              <Users className="w-3.5 h-3.5 text-[#7C3AED]" />
+              <Users className="w-3.5 h-3.5 text-[#7C3AED] shrink-0" />
               <span>{Math.max(1, auditors.length)}</span>
             </button>
 
@@ -229,25 +235,25 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           {/* Toggle de Sonido Web Audio */}
           <button
             onClick={toggleSound}
-            className={`p-2 rounded-xl border transition cursor-pointer shadow-sm ${
+            className={`p-1.5 sm:p-2 rounded-xl border transition cursor-pointer shadow-xs sm:shadow-sm shrink-0 ${
               isMuted
                 ? 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-400 hover:text-slate-600'
                 : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#7C3AED] hover:text-[#6D28D9]'
             }`}
             title={isMuted ? 'Activar Sonidos de Conteo' : 'Silenciar'}
           >
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            {isMuted ? <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
           </button>
 
           {/* Configuración Odoo */}
           <button
             type="button"
             onClick={onOpenOdooModal}
-            className="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#64748B] hover:text-[#7C3AED] transition cursor-pointer shadow-sm"
+            className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#64748B] hover:text-[#7C3AED] transition cursor-pointer shadow-xs sm:shadow-sm shrink-0"
             title="Configuración de Credenciales Odoo 17"
             aria-label="Configuración Odoo"
           >
-            <Settings className="w-4 h-4 text-[#7C3AED]" />
+            <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#7C3AED]" />
             <span className="hidden xl:inline text-xs font-semibold text-[#0F172A]">Configuración Odoo</span>
           </button>
 
@@ -255,22 +261,22 @@ export const SessionBar: React.FC<SessionBarProps> = ({
           <a
             href="/odoo-audit-app.zip"
             download="odoo-audit-app.zip"
-            className="p-2 rounded-xl bg-[#F8FAFC] hover:bg-purple-50 border border-[#E2E8F0] hover:border-[#7C3AED]/40 text-[#64748B] hover:text-[#7C3AED] transition cursor-pointer flex items-center justify-center shadow-sm"
+            className="p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] hover:bg-purple-50 border border-[#E2E8F0] hover:border-[#7C3AED]/40 text-[#64748B] hover:text-[#7C3AED] transition cursor-pointer flex items-center justify-center shadow-xs sm:shadow-sm shrink-0"
             title="Descargar código del proyecto (.ZIP)"
             aria-label="Descargar código del proyecto"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </a>
 
           {/* Salir de la sesión */}
           <button
             type="button"
             onClick={() => setShowLogoutConfirm(true)}
-            className="p-2 rounded-xl bg-[#F8FAFC] hover:bg-rose-50 border border-[#E2E8F0] hover:border-rose-300 text-[#64748B] hover:text-rose-600 transition cursor-pointer shadow-sm"
+            className="p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] hover:bg-rose-50 border border-[#E2E8F0] hover:border-rose-300 text-[#64748B] hover:text-rose-600 transition cursor-pointer shadow-xs sm:shadow-sm shrink-0"
             title="Salir de la sesión de inventario"
             aria-label="Salir de la sesión"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
       </div>
