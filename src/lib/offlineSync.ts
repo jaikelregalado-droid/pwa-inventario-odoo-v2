@@ -278,7 +278,8 @@ export async function syncPendingCounts(
 export function mergeAuditItems(
   localItems: QuantItem[],
   remoteItems: QuantItem[],
-  pendingQueue: RealtimeCountUpdate[] = []
+  pendingQueue: RealtimeCountUpdate[] = [],
+  options?: { preserveLocalSystemQty?: boolean }
 ): QuantItem[] {
   const mergedMap = new Map<string, QuantItem>();
 
@@ -347,8 +348,8 @@ export function mergeAuditItems(
       }
     }
 
-    // Conservar datos maestros del sistema si el servidor los trajo
-    if (rem.quantity !== undefined && rem.quantity !== null) {
+    // Conservar datos maestros del sistema si el servidor los trajo (salvo que acabemos de sincronizar QS vivo desde Odoo)
+    if (!options?.preserveLocalSystemQty && rem.quantity !== undefined && rem.quantity !== null) {
       if (!existing.isLocked) {
         existing.quantity = rem.quantity;
       }

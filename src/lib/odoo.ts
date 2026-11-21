@@ -160,16 +160,26 @@ export async function executeJsonRpc<T = any>(
   }
 
   // 3. Formatear args para la llamada JSON-RPC:
-  // En Odoo 17, execute_kw recibe de 5 a 6 argumentos posicionales:
-  // [db, uid, password, model, method, args]
-  // Si args ya cuenta con 6 elementos (incluyendo el array de argumentos del método),
-  // se envían exactamente esos 6 argumentos y se elimina cualquier 7mo argumento posicional.
+  // En Odoo 17, execute_kw acepta [db, uid, password, model, method, args, kwargs?].
+  // Es fundamental conservar kwargs (fields, limit, context con allowed_company_ids y company_id)
+  // cuando se envían como parámetro 5 o en args[6].
   let rpcArgs = args;
   if (service === 'object' && method === 'execute_kw') {
-    if (args.length >= 6) {
-      rpcArgs = args.slice(0, 6);
-    } else if (kwargs && Object.keys(kwargs).length > 0) {
-      rpcArgs = [...args, kwargs];
+    const baseArgs = args.slice(0, 6);
+    const inlineKwargs =
+      args.length >= 7 && args[6] && typeof args[6] === 'object' && !Array.isArray(args[6])
+        ? args[6]
+        : undefined;
+    const hasParamKwargs = Boolean(kwargs && Object.keys(kwargs).length > 0);
+
+    if (inlineKwargs || hasParamKwargs) {
+      const mergedKwargs = {
+        ...(inlineKwargs || {}),
+        ...(hasParamKwargs ? kwargs : {}),
+      };
+      rpcArgs = [...baseArgs, mergedKwargs];
+    } else {
+      rpcArgs = baseArgs;
     }
   } else if (service === 'object') {
     rpcArgs = kwargs && Object.keys(kwargs).length > 0 ? [...args, kwargs] : args;
@@ -199,6 +209,7 @@ export async function executeJsonRpc<T = any>(
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
+      cache: 'no-store',
       signal: controller.signal,
     });
 
@@ -315,16 +326,83 @@ export async function authenticateOdoo(
   };
 }
 
+const verifiedCompanyCache = new Map<string, { companyId: number; companyName: string }>();
+
+/**
+ * Resuelve en Odoo el company_id exacto de "FV GRUPO EMPRESARIAL, C.A."
+ * Garantiza que todas las consultas de stock.quant filtren estrictamente por esa compañía.
+ */
+export async function resolveFVGrupoCompany(
+  config: OdooConnectionConfig,
+  forceRefresh: boolean = false
+): Promise<{ companyId: number; companyName: string }> {
+  const cleanUrl = sanitizeOdooUrl(config.url);
+  const cacheKey = `${cleanUrl}|${config.db}`;
+
+  if (!forceRefresh && verifiedCompanyCache.has(cacheKey)) {
+    const cached = verifiedCompanyCache.get(cacheKey)!;
+    config.companyId = cached.companyId;
+    config.companyName = cached.companyName;
+    return cached;
+  }
+
+  const uid = await ensureAuthenticatedUid(config);
+  const { db, apiKey } = config;
+
+  try {
+    const companies = await executeJsonRpc<OdooCompany[]>(
+      config,
+      'object',
+      'execute_kw',
+      [db, uid, apiKey, 'res.company', 'search_read', [[]]],
+      {
+        fields: ['id', 'name'],
+        limit: 100,
+      }
+    );
+
+    if (companies && companies.length > 0) {
+      const target =
+        companies.find(
+          (c) => c.name.trim().toUpperCase() === 'FV GRUPO EMPRESARIAL, C.A.'
+        ) ||
+        companies.find((c) =>
+          c.name.toLowerCase().includes('fv grupo empresarial')
+        ) ||
+        companies.find((c) => c.name.toLowerCase().includes('fv grupo')) ||
+        (config.companyId ? companies.find((c) => c.id === config.companyId) : undefined) ||
+        companies[0];
+
+      if (target && typeof target.id === 'number' && target.id > 0) {
+        const resolved = { companyId: target.id, companyName: target.name };
+        verifiedCompanyCache.set(cacheKey, resolved);
+        config.companyId = resolved.companyId;
+        config.companyName = resolved.companyName;
+        return resolved;
+      }
+    }
+  } catch (err) {
+    console.warn('Aviso resolviendo res.company para FV GRUPO EMPRESARIAL, C.A.:', err);
+  }
+
+  const fallback = {
+    companyId: config.companyId && config.companyId > 0 ? config.companyId : 1,
+    companyName: config.companyName || 'FV GRUPO EMPRESARIAL, C.A.',
+  };
+  config.companyId = fallback.companyId;
+  config.companyName = fallback.companyName;
+  return fallback;
+}
+
 /**
  * Recupera las categorías de producto ('product.category')
  * Deduplica estrictamente por complete_name o por ID único para evitar repeticiones.
  * Pasa el contexto de la compañía seleccionada para mayor consistencia.
  */
 export async function fetchCategories(config: OdooConnectionConfig): Promise<OdooCategory[]> {
-  const { db, apiKey, companyId } = config;
+  const { db, apiKey } = config;
   const uid = await ensureAuthenticatedUid(config);
-
-  const compId = companyId || 1;
+  const { companyId: compId } = await resolveFVGrupoCompany(config);
   const context = { allowed_company_ids: [compId], company_id: compId };
 
   let results: Array<{ id: number; name: string; complete_name?: string }> = [];
@@ -450,27 +528,34 @@ export async function fetchQuants(
   categoryId?: number | number[],
   searchQuery?: string
 ): Promise<QuantItem[]> {
-  const { db, apiKey, companyId } = config;
+  const { db, apiKey } = config;
   const uid = await ensureAuthenticatedUid(config);
   if (!uid || typeof uid !== 'number' || uid <= 0) {
     throw new Error('Credenciales incorrectas o API Key inválida.');
   }
 
-  const compId = companyId || 1;
+  // Resolver estrictamente el company_id de "FV GRUPO EMPRESARIAL, C.A."
+  const { companyId: compId } = await resolveFVGrupoCompany(config);
 
-  // 1. Contexto de Compañía para stock.quant y product.product
+  // 1. Contexto de Compañía estricto para stock.quant y product.product
   const companyContext = {
     allowed_company_ids: [compId],
     company_id: compId,
   };
 
-  // 1.1 Localizar obligatoriamente la ubicación principal 'WH/Existencias' (o internas que inicien por WH)
-  // Ignorando por completo sedes ajenas como ZL, clientes o proveedores
+  // 1.1 Localizar obligatoriamente la ubicación principal 'WH/Existencias' de FV GRUPO EMPRESARIAL, C.A.
+  // Ignorando por completo sedes ajenas como ZL, clientes, proveedores o de otras compañías
   let whLocationIds: number[] = [];
   let mainWhLocationId: number | undefined = undefined;
 
   try {
-    const locResults = await executeJsonRpc<Array<{ id: number; name: string; complete_name?: string; usage: string }>>(
+    const locResults = await executeJsonRpc<Array<{
+      id: number;
+      name: string;
+      complete_name?: string;
+      usage: string;
+      company_id?: [number, string] | number | false;
+    }>>(
       config,
       'object',
       'execute_kw',
@@ -482,22 +567,25 @@ export async function fetchQuants(
         'search_read',
         [[
           ['usage', '=', 'internal'],
+          ['company_id', 'in', [compId, false]],
           '|',
           ['complete_name', 'ilike', 'WH%'],
           ['name', 'ilike', 'Existencias%']
         ]],
       ],
       {
-        fields: ['id', 'name', 'complete_name', 'usage'],
+        fields: ['id', 'name', 'complete_name', 'usage', 'company_id'],
         limit: 0,
         context: companyContext,
       }
     );
 
     if (locResults && locResults.length > 0) {
-      // Filtrar estrictamente: descartar ZL, clientes, proveedores y no internas
+      // Filtrar estrictamente: descartar ZL, clientes, proveedores y otras compañías
       const cleanWhLocs = locResults.filter((l) => {
         const full = (l.complete_name || l.name || '').toUpperCase();
+        const locCompId = Array.isArray(l.company_id) ? l.company_id[0] : (typeof l.company_id === 'number' ? l.company_id : 0);
+        if (locCompId && locCompId !== compId) return false;
         return (
           (full.startsWith('WH') || full.includes('EXISTENCIAS')) &&
           !full.startsWith('ZL') &&
@@ -509,11 +597,18 @@ export async function fetchQuants(
         );
       });
 
-      // Priorizar la ubicación específica 'WH/Existencias'
-      const existenciasLoc = cleanWhLocs.find((l) => {
-        const full = (l.complete_name || l.name || '').toUpperCase();
-        return full === 'WH/EXISTENCIAS' || full.includes('WH/EXISTENCIAS');
-      }) || cleanWhLocs[0];
+      // Priorizar la ubicación específica 'WH/Existencias' con company_id === compId
+      const existenciasLoc =
+        cleanWhLocs.find((l) => {
+          const full = (l.complete_name || l.name || '').toUpperCase();
+          const locCompId = Array.isArray(l.company_id) ? l.company_id[0] : (typeof l.company_id === 'number' ? l.company_id : 0);
+          return locCompId === compId && (full === 'WH/EXISTENCIAS' || full.includes('WH/EXISTENCIAS'));
+        }) ||
+        cleanWhLocs.find((l) => {
+          const full = (l.complete_name || l.name || '').toUpperCase();
+          return full === 'WH/EXISTENCIAS' || full.includes('WH/EXISTENCIAS');
+        }) ||
+        cleanWhLocs[0];
 
       if (existenciasLoc) {
         mainWhLocationId = existenciasLoc.id;
@@ -524,10 +619,11 @@ export async function fetchQuants(
     console.warn('Error resolviendo ubicaciones WH en stock.location:', locErr);
   }
 
-  // 2. Dominio en stock.quant:
-  // - Filtrar OBLIGATORIAMENTE por ubicación principal WH/Existencias (o ubicaciones internas con usage = 'internal' que inicien por WH)
+  // 2. Dominio estricto en stock.quant:
+  // - Filtrar OBLIGATORIAMENTE por company_id = compId ("FV GRUPO EMPRESARIAL, C.A.")
+  // - Filtrar por ubicación principal WH/Existencias (o ubicación seleccionada)
   // - Filtrar por categoría seleccionada si aplica
-  const quantDomain: any[] = [];
+  const quantDomain: any[] = [['company_id', '=', compId]];
 
   if (locationId) {
     quantDomain.push(['location_id', 'child_of', locationId]);
@@ -536,7 +632,6 @@ export async function fetchQuants(
   } else if (whLocationIds.length > 0) {
     quantDomain.push(['location_id', 'in', whLocationIds]);
   } else {
-    // Si no se pudieron precargar IDs, usar dominio directo en RPC
     quantDomain.push(['location_id.usage', '=', 'internal']);
     quantDomain.push(['location_id.complete_name', 'ilike', 'WH%']);
   }
@@ -554,6 +649,7 @@ export async function fetchQuants(
     id: number;
     product_id: [number, string] | number | false;
     location_id: [number, string] | number | false;
+    company_id?: [number, string] | number | false;
     quantity: number;
     inventory_quantity?: number;
   }> = [];
@@ -565,6 +661,7 @@ export async function fetchQuants(
       id: number;
       product_id: [number, string] | number | false;
       location_id: [number, string] | number | false;
+      company_id?: [number, string] | number | false;
       quantity: number;
       inventory_quantity?: number;
     }>>(
@@ -580,7 +677,7 @@ export async function fetchQuants(
         [quantDomain],
       ],
       {
-        fields: ['id', 'product_id', 'location_id', 'quantity', 'inventory_quantity'],
+        fields: ['id', 'product_id', 'location_id', 'company_id', 'quantity', 'inventory_quantity'],
         limit: 0, // Carga el 100% de los quants sin truncar a 500
         context: companyContext,
       }
@@ -588,8 +685,10 @@ export async function fetchQuants(
   } catch (err: any) {
     console.warn('Fallo en búsqueda directa de stock.quant con filtro estricto, intentando simplificado con IDs:', err);
     try {
-      const fallbackDomain: any[] = [];
-      if (mainWhLocationId) {
+      const fallbackDomain: any[] = [['company_id', '=', compId]];
+      if (locationId) {
+        fallbackDomain.push(['location_id', 'child_of', locationId]);
+      } else if (mainWhLocationId) {
         fallbackDomain.push(['location_id', 'child_of', mainWhLocationId]);
       } else if (whLocationIds.length > 0) {
         fallbackDomain.push(['location_id', 'in', whLocationIds]);
@@ -603,7 +702,7 @@ export async function fetchQuants(
         'execute_kw',
         [db, uid, apiKey, 'stock.quant', 'search_read', [fallbackDomain]],
         {
-          fields: ['id', 'product_id', 'location_id', 'quantity', 'inventory_quantity'],
+          fields: ['id', 'product_id', 'location_id', 'company_id', 'quantity', 'inventory_quantity'],
           limit: 0,
           context: companyContext,
         }
@@ -734,6 +833,14 @@ export async function fetchQuants(
   const itemsByProduct = new Map<number, QuantItem>();
 
   for (const q of rawQuants || []) {
+    // Verificación estricta de compañía ("FV GRUPO EMPRESARIAL, C.A.")
+    if (q.company_id) {
+      const qCompId = Array.isArray(q.company_id)
+        ? q.company_id[0]
+        : (typeof q.company_id === 'number' ? q.company_id : 0);
+      if (qCompId && qCompId !== compId) continue;
+    }
+
     let pId = 0;
     let rawProdName = 'Producto Sin Nombre';
 
@@ -754,14 +861,17 @@ export async function fetchQuants(
 
     // Validar ubicación: ignorar sedes ajenas como ZL, clientes, proveedores o virtuales
     const locNameUpper = locName.toUpperCase();
-    const isWh =
-      (locNameUpper.startsWith('WH') || locNameUpper.includes('EXISTENCIAS')) &&
-      !locNameUpper.startsWith('ZL') &&
-      !locNameUpper.includes('/ZL') &&
-      !locNameUpper.includes('CLIENTES') &&
-      !locNameUpper.includes('PROVEEDORES') &&
-      !locNameUpper.includes('PARTNER') &&
-      !locNameUpper.includes('CUSTOMER');
+    const isExcludedLoc =
+      locNameUpper.startsWith('ZL') ||
+      locNameUpper.includes('/ZL') ||
+      locNameUpper.includes('CLIENTES') ||
+      locNameUpper.includes('PROVEEDORES') ||
+      locNameUpper.includes('PARTNER') ||
+      locNameUpper.includes('CUSTOMER') ||
+      locNameUpper.includes('VIRTUAL');
+    const isWh = locationId
+      ? !isExcludedLoc
+      : ((locNameUpper.startsWith('WH') || locNameUpper.includes('EXISTENCIAS')) && !isExcludedLoc);
 
     if (!isWh) continue;
 
@@ -769,11 +879,10 @@ export async function fetchQuants(
     const invQty = Number(q.inventory_quantity) || 0;
 
     // Si ya existe este producto en el mapa, agruparlo / sumar el stock en WH
-    // Si ya existe este producto en el mapa, agruparlo / sumar el stock en WH
     if (itemsByProduct.has(pId)) {
       const existing = itemsByProduct.get(pId)!;
-      existing.quantity += systemQty;
-      existing.inventoryQuantity = (existing.inventoryQuantity || 0) + invQty;
+      existing.quantity = Math.round((existing.quantity + systemQty) * 1000) / 1000;
+      existing.inventoryQuantity = Math.round(((existing.inventoryQuantity || 0) + invQty) * 1000) / 1000;
       // BLIND COUNT: Por defecto en 0 para obligar a realizar el conteo físico desde cero
       existing.countedQuantity = 0;
       existing.difference = -existing.quantity;
@@ -956,6 +1065,411 @@ export async function fetchQuants(
   }
 
   return items;
+}
+
+export interface RealTimeOdooSyncResult {
+  items: QuantItem[];
+  companyId: number;
+  companyName: string;
+  totalProcessed: number;
+  qsUpdatedCount: number;
+  newProductsAdded: number;
+  syncedAt: string;
+}
+
+/**
+ * Consulta en tiempo real las existencias actuales (stock.quant) en Odoo 17
+ * filtrando estrictamente por la compañía "FV GRUPO EMPRESARIAL, C.A."
+ * (company_id en el dominio y company_id / allowed_company_ids en el contexto),
+ * sin reutilizar lecturas cacheadas.
+ *
+ * Sobrescribe los valores de Cantidad en Sistema (QS) locales para reflejar
+ * ventas, descargas/entregas e ingresos validados recientemente en Odoo,
+ * preservando conteos físicos (QC), historial, bloqueo (isLocked) y el campo oficial barcode.
+ */
+export async function syncRealTimeStockFromOdoo(
+  config: OdooConnectionConfig,
+  currentItems: QuantItem[],
+  options?: {
+    locationId?: number;
+    categoryIds?: number[];
+    isCustomInventory?: boolean;
+  }
+): Promise<RealTimeOdooSyncResult> {
+  const uid = await ensureAuthenticatedUid(config);
+  if (!uid || typeof uid !== 'number' || uid <= 0) {
+    throw new Error('Credenciales de Odoo 17 incorrectas o API Key inválida.');
+  }
+
+  // Forzar resolución fresca del company_id de "FV GRUPO EMPRESARIAL, C.A."
+  const { companyId: compId, companyName } = await resolveFVGrupoCompany(config, true);
+  const effectiveConfig: OdooConnectionConfig = {
+    ...config,
+    uid,
+    companyId: compId,
+    companyName,
+  };
+  const companyContext = {
+    allowed_company_ids: [compId],
+    company_id: compId,
+  };
+
+  let qsUpdatedCount = 0;
+  let newProductsAdded = 0;
+  const targetCatIds = (options?.categoryIds || []).filter((id) => typeof id === 'number' && id > 0);
+  const useCategoryFetch = !options?.isCustomInventory && targetCatIds.length > 0;
+
+  // Caso 1: Auditoría por Categorías (consulta completa en tiempo real con fetchQuants)
+  if (useCategoryFetch) {
+    const freshOdooItems = await fetchQuants(effectiveConfig, options?.locationId, targetCatIds);
+
+    const existingByProduct = new Map<number, QuantItem>();
+    const existingById = new Map<number, QuantItem>();
+    for (const item of currentItems) {
+      if (item.productId > 0) existingByProduct.set(item.productId, item);
+      existingById.set(item.id, item);
+    }
+
+    const updatedList: QuantItem[] = [];
+    const seenProductIds = new Set<number>();
+
+    for (const fresh of freshOdooItems) {
+      if (fresh.productId > 0) seenProductIds.add(fresh.productId);
+      const existing =
+        (fresh.productId > 0 ? existingByProduct.get(fresh.productId) : undefined) ||
+        existingById.get(fresh.id);
+
+      if (existing) {
+        const freshQty = Math.round((Number(fresh.quantity) || 0) * 1000) / 1000;
+        const effectiveQty = existing.isLocked ? existing.quantity : freshQty;
+        if (!existing.isLocked && Math.abs(freshQty - existing.quantity) > 0.0001) {
+          qsUpdatedCount++;
+        }
+
+        const counted = Number(existing.countedQuantity || 0);
+        updatedList.push({
+          ...existing,
+          id: fresh.id > 0 ? fresh.id : existing.id,
+          productId: fresh.productId || existing.productId,
+          productName: fresh.productName || existing.productName,
+          defaultCode: fresh.defaultCode || existing.defaultCode || '',
+          barcode: fresh.barcode || existing.barcode || '',
+          locationId: fresh.locationId || existing.locationId,
+          locationName: fresh.locationName || existing.locationName,
+          categId: fresh.categId ?? existing.categId,
+          categName: fresh.categName || existing.categName,
+          companyId: compId,
+          quantity: effectiveQty,
+          inventoryQuantity: existing.isLocked ? existing.inventoryQuantity : fresh.inventoryQuantity,
+          difference: Math.round((counted - effectiveQty) * 1000) / 1000,
+        });
+      } else {
+        newProductsAdded++;
+        updatedList.push(fresh);
+      }
+    }
+
+    // Si existían productos extra añadidos manualmente fuera de las categorías (ej. escaneo multi-ubicación),
+    // consultar también su stock.quant en tiempo real para no dejarlos con QS obsoleto.
+    const extraItems = currentItems.filter(
+      (item) => item.productId > 0 && !seenProductIds.has(item.productId)
+    );
+    if (extraItems.length > 0) {
+      const extraResult = await refreshSpecificProductsFromOdoo(
+        effectiveConfig,
+        extraItems,
+        compId,
+        companyContext,
+        options?.locationId
+      );
+      qsUpdatedCount += extraResult.qsUpdatedCount;
+      updatedList.push(...extraResult.items);
+    }
+
+    return {
+      items: updatedList,
+      companyId: compId,
+      companyName,
+      totalProcessed: updatedList.length,
+      qsUpdatedCount,
+      newProductsAdded,
+      syncedAt: new Date().toISOString(),
+    };
+  }
+
+  // Caso 2: Inventario Personalizado o Sesión sin categorías fijas -> refrescar todos los productIds actuales
+  if (currentItems.length === 0) {
+    // Si no había items en memoria ni categoría, cargar el catálogo de la compañía desde stock.quant
+    const freshOdooItems = await fetchQuants(effectiveConfig, options?.locationId, undefined);
+    return {
+      items: freshOdooItems,
+      companyId: compId,
+      companyName,
+      totalProcessed: freshOdooItems.length,
+      qsUpdatedCount: freshOdooItems.length,
+      newProductsAdded: freshOdooItems.length,
+      syncedAt: new Date().toISOString(),
+    };
+  }
+
+  const refreshed = await refreshSpecificProductsFromOdoo(
+    effectiveConfig,
+    currentItems,
+    compId,
+    companyContext,
+    options?.locationId
+  );
+
+  return {
+    items: refreshed.items,
+    companyId: compId,
+    companyName,
+    totalProcessed: refreshed.items.length,
+    qsUpdatedCount: refreshed.qsUpdatedCount,
+    newProductsAdded: 0,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+async function refreshSpecificProductsFromOdoo(
+  config: OdooConnectionConfig,
+  itemsToRefresh: QuantItem[],
+  compId: number,
+  companyContext: { allowed_company_ids: number[]; company_id: number },
+  locationId?: number
+): Promise<{ items: QuantItem[]; qsUpdatedCount: number }> {
+  const { db, apiKey } = config;
+  const uid = await ensureAuthenticatedUid(config);
+
+  const productIds = Array.from(
+    new Set(itemsToRefresh.map((i) => i.productId).filter((id) => typeof id === 'number' && id > 0))
+  );
+
+  if (productIds.length === 0) {
+    return { items: itemsToRefresh, qsUpdatedCount: 0 };
+  }
+
+  // Resolver ubicaciones WH de FV GRUPO EMPRESARIAL, C.A. si no se pasó locationId explícito
+  let mainWhLocationId: number | undefined;
+  let whLocationIds: number[] = [];
+
+  if (!locationId) {
+    try {
+      const locResults = await executeJsonRpc<Array<{
+        id: number;
+        name: string;
+        complete_name?: string;
+        usage: string;
+        company_id?: [number, string] | number | false;
+      }>>(
+        config,
+        'object',
+        'execute_kw',
+        [
+          db,
+          uid,
+          apiKey,
+          'stock.location',
+          'search_read',
+          [[
+            ['usage', '=', 'internal'],
+            ['company_id', 'in', [compId, false]],
+            '|',
+            ['complete_name', 'ilike', 'WH%'],
+            ['name', 'ilike', 'Existencias%']
+          ]],
+        ],
+        {
+          fields: ['id', 'name', 'complete_name', 'usage', 'company_id'],
+          limit: 0,
+          context: companyContext,
+        }
+      );
+
+      if (locResults && locResults.length > 0) {
+        const cleanWhLocs = locResults.filter((l) => {
+          const full = (l.complete_name || l.name || '').toUpperCase();
+          const locCompId = Array.isArray(l.company_id) ? l.company_id[0] : (typeof l.company_id === 'number' ? l.company_id : 0);
+          if (locCompId && locCompId !== compId) return false;
+          return (
+            (full.startsWith('WH') || full.includes('EXISTENCIAS')) &&
+            !full.startsWith('ZL') &&
+            !full.includes('/ZL') &&
+            !full.includes('CLIENTES') &&
+            !full.includes('PROVEEDORES') &&
+            !full.includes('CUSTOMER') &&
+            !full.includes('PARTNER')
+          );
+        });
+
+        const existenciasLoc =
+          cleanWhLocs.find((l) => {
+            const full = (l.complete_name || l.name || '').toUpperCase();
+            const locCompId = Array.isArray(l.company_id) ? l.company_id[0] : (typeof l.company_id === 'number' ? l.company_id : 0);
+            return locCompId === compId && (full === 'WH/EXISTENCIAS' || full.includes('WH/EXISTENCIAS'));
+          }) ||
+          cleanWhLocs.find((l) => {
+            const full = (l.complete_name || l.name || '').toUpperCase();
+            return full === 'WH/EXISTENCIAS' || full.includes('WH/EXISTENCIAS');
+          }) ||
+          cleanWhLocs[0];
+
+        if (existenciasLoc) mainWhLocationId = existenciasLoc.id;
+        whLocationIds = cleanWhLocs.map((l) => l.id);
+      }
+    } catch {
+      // Fallback directo en dominio de stock.quant
+    }
+  }
+
+  const quantByProduct = new Map<
+    number,
+    { quantId: number; quantity: number; inventoryQuantity: number; locationId?: number; locationName?: string }
+  >();
+  const productInfoMap = new Map<
+    number,
+    { barcode: string; defaultCode: string; categId?: number; categName?: string }
+  >();
+
+  const batchSize = 150;
+  for (let i = 0; i < productIds.length; i += batchSize) {
+    const batchIds = productIds.slice(i, i + batchSize);
+
+    const quantDomain: any[] = [
+      ['company_id', '=', compId],
+      ['product_id', 'in', batchIds],
+    ];
+    if (locationId) {
+      quantDomain.push(['location_id', 'child_of', locationId]);
+    } else if (mainWhLocationId) {
+      quantDomain.push(['location_id', 'child_of', mainWhLocationId]);
+    } else if (whLocationIds.length > 0) {
+      quantDomain.push(['location_id', 'in', whLocationIds]);
+    } else {
+      quantDomain.push(['location_id.usage', '=', 'internal']);
+      quantDomain.push(['location_id.complete_name', 'ilike', 'WH%']);
+    }
+
+    const [rawQuants, prodDetails] = await Promise.all([
+      executeJsonRpc<Array<{
+        id: number;
+        product_id: [number, string] | number | false;
+        location_id: [number, string] | number | false;
+        company_id?: [number, string] | number | false;
+        quantity: number;
+        inventory_quantity?: number;
+      }>>(
+        config,
+        'object',
+        'execute_kw',
+        [db, uid, apiKey, 'stock.quant', 'search_read', [quantDomain]],
+        {
+          fields: ['id', 'product_id', 'location_id', 'company_id', 'quantity', 'inventory_quantity'],
+          limit: 0,
+          context: companyContext,
+        }
+      ),
+      executeJsonRpc<Array<{
+        id: number;
+        default_code?: string | false;
+        barcode?: string | false;
+        categ_id?: [number, string] | number | false;
+      }>>(
+        config,
+        'object',
+        'execute_kw',
+        [db, uid, apiKey, 'product.product', 'search_read', [[['id', 'in', batchIds]]]],
+        {
+          fields: ['id', 'default_code', 'barcode', 'categ_id'],
+          limit: 0,
+          context: companyContext,
+        }
+      ).catch(() => []),
+    ]);
+
+    for (const q of rawQuants || []) {
+      if (q.company_id) {
+        const qCompId = Array.isArray(q.company_id)
+          ? q.company_id[0]
+          : (typeof q.company_id === 'number' ? q.company_id : 0);
+        if (qCompId && qCompId !== compId) continue;
+      }
+
+      const pId = Array.isArray(q.product_id) ? q.product_id[0] : Number(q.product_id);
+      if (!pId || pId <= 0) continue;
+
+      const qLocId = Array.isArray(q.location_id) ? q.location_id[0] : Number(q.location_id) || 0;
+      const qLocName = Array.isArray(q.location_id) ? q.location_id[1] : '';
+      const locUpper = qLocName.toUpperCase();
+      const isExcluded =
+        locUpper.startsWith('ZL') ||
+        locUpper.includes('/ZL') ||
+        locUpper.includes('CLIENTES') ||
+        locUpper.includes('PROVEEDORES') ||
+        locUpper.includes('PARTNER') ||
+        locUpper.includes('CUSTOMER') ||
+        locUpper.includes('VIRTUAL');
+      if (isExcluded) continue;
+
+      const qty = Number(q.quantity) || 0;
+      const invQty = Number(q.inventory_quantity) || 0;
+
+      const existingQuant = quantByProduct.get(pId);
+      if (existingQuant) {
+        existingQuant.quantity = Math.round((existingQuant.quantity + qty) * 1000) / 1000;
+        existingQuant.inventoryQuantity = Math.round((existingQuant.inventoryQuantity + invQty) * 1000) / 1000;
+      } else {
+        quantByProduct.set(pId, {
+          quantId: q.id,
+          quantity: Math.round(qty * 1000) / 1000,
+          inventoryQuantity: Math.round(invQty * 1000) / 1000,
+          locationId: qLocId || undefined,
+          locationName: qLocName || undefined,
+        });
+      }
+    }
+
+    for (const p of prodDetails || []) {
+      productInfoMap.set(p.id, {
+        barcode: cleanCode(p.barcode),
+        defaultCode: cleanCode(p.default_code),
+        categId: Array.isArray(p.categ_id) ? p.categ_id[0] : (typeof p.categ_id === 'number' ? p.categ_id : undefined),
+        categName: Array.isArray(p.categ_id) ? p.categ_id[1] : undefined,
+      });
+    }
+  }
+
+  let qsUpdatedCount = 0;
+  const refreshedItems = itemsToRefresh.map((item) => {
+    const liveQuant = item.productId > 0 ? quantByProduct.get(item.productId) : undefined;
+    const prodInfo = item.productId > 0 ? productInfoMap.get(item.productId) : undefined;
+
+    // Si el producto ya no tiene stock.quant en Odoo (ej. venta/descarga total validada), su QS actual es 0
+    const liveQty = liveQuant ? liveQuant.quantity : 0;
+    const effectiveQty = item.isLocked ? item.quantity : liveQty;
+
+    if (!item.isLocked && Math.abs(liveQty - item.quantity) > 0.0001) {
+      qsUpdatedCount++;
+    }
+
+    const counted = Number(item.countedQuantity || 0);
+    return {
+      ...item,
+      id: !item.isLocked && liveQuant && liveQuant.quantId > 0 ? liveQuant.quantId : item.id,
+      companyId: compId,
+      barcode: prodInfo?.barcode || item.barcode || '',
+      defaultCode: prodInfo?.defaultCode || item.defaultCode || '',
+      categId: prodInfo?.categId ?? item.categId,
+      categName: prodInfo?.categName || item.categName,
+      locationId: liveQuant?.locationId || item.locationId,
+      locationName: liveQuant?.locationName || item.locationName,
+      quantity: effectiveQty,
+      inventoryQuantity: item.isLocked ? item.inventoryQuantity : (liveQuant?.inventoryQuantity ?? 0),
+      difference: Math.round((counted - effectiveQty) * 1000) / 1000,
+    };
+  });
+
+  return { items: refreshedItems, qsUpdatedCount };
 }
 
 /**
@@ -1408,6 +1922,9 @@ export async function lookupGlobalProductInOdoo(
     const uid = await ensureAuthenticatedUid(config);
     if (!uid) return { found: false };
 
+    const { companyId: compId } = await resolveFVGrupoCompany(config);
+    const companyContext = { allowed_company_ids: [compId], company_id: compId };
+
     // Buscar en product.product por código de barras o referencia interna
     const domain = [
       '|',
@@ -1419,8 +1936,8 @@ export async function lookupGlobalProductInOdoo(
       id: number;
       name: string;
       display_name?: string;
-      default_code?: string;
-      barcode?: string;
+      default_code?: string | false;
+      barcode?: string | false;
       categ_id?: [number, string] | number;
     }>>(
       config,
@@ -1433,11 +1950,12 @@ export async function lookupGlobalProductInOdoo(
         'product.product',
         'search_read',
         [domain],
-        {
-          fields: ['id', 'name', 'display_name', 'default_code', 'barcode', 'categ_id'],
-          limit: 1,
-        }
-      ]
+      ],
+      {
+        fields: ['id', 'name', 'display_name', 'default_code', 'barcode', 'categ_id'],
+        limit: 1,
+        context: companyContext,
+      }
     );
 
     if (!products || products.length === 0) {
@@ -1448,7 +1966,7 @@ export async function lookupGlobalProductInOdoo(
     const categName = Array.isArray(prod.categ_id) ? prod.categ_id[1] : undefined;
     const categId = Array.isArray(prod.categ_id) ? prod.categ_id[0] : (typeof prod.categ_id === 'number' ? prod.categ_id : undefined);
 
-    // Buscar existencias actuales en stock.quant para ver en qué ubicaciones/departamentos está
+    // Buscar existencias actuales en stock.quant filtrando por FV GRUPO EMPRESARIAL, C.A.
     let locations: Array<{ quantId: number; locationId: number; locationName: string; quantity: number }> = [];
     try {
       const quants = await executeJsonRpc<Array<{
@@ -1465,12 +1983,13 @@ export async function lookupGlobalProductInOdoo(
           config.apiKey,
           'stock.quant',
           'search_read',
-          [[['product_id', '=', prod.id], ['location_id.usage', '=', 'internal']]],
-          {
-            fields: ['id', 'location_id', 'quantity'],
-            limit: 10,
-          }
-        ]
+          [[['product_id', '=', prod.id], ['location_id.usage', '=', 'internal'], ['company_id', '=', compId]]],
+        ],
+        {
+          fields: ['id', 'location_id', 'quantity'],
+          limit: 10,
+          context: companyContext,
+        }
       );
 
       if (quants && quants.length > 0) {
@@ -1491,7 +2010,7 @@ export async function lookupGlobalProductInOdoo(
         id: prod.id,
         name: prod.display_name || prod.name,
         defaultCode: cleanCode(prod.default_code),
-        barcode: prod.barcode || '',
+        barcode: cleanCode(prod.barcode),
         categId,
         categName,
       },
@@ -1535,6 +2054,9 @@ export async function searchGlobalProductsForCustomAudit(
       throw new Error('Credenciales de Odoo no válidas o expiradas');
     }
 
+    const { companyId: compId } = await resolveFVGrupoCompany(config);
+    const companyContext = { allowed_company_ids: [compId], company_id: compId };
+
     // Regla 3: Si no hay término de búsqueda ingresado (campo vacío),
     // consultar los primeros 50 productos generales usando un dominio vacío [] con un límite 50
     let domain: any[] = [];
@@ -1559,8 +2081,6 @@ export async function searchGlobalProductsForCustomAudit(
       'categ_id',
     ];
 
-    // Argumento 6 de execute_kw: Lista de argumentos posicionales para search_read:
-    // [domain, fields, offset, limit] -> [domain, productFields, 0, 50]
     const searchReadArgs = [
       domain,
       productFields,
@@ -1568,13 +2088,6 @@ export async function searchGlobalProductsForCustomAudit(
       50,
     ];
 
-    // LLAMADA RPC EXACTA DE 6 ARGUMENTOS POSICIONALES (SIN POSICIÓN 7):
-    // 1. db (String): nombre de la base de datos
-    // 2. uid (Integer): ID de usuario autenticado
-    // 3. password (String): contraseña o API Key
-    // 4. model (String): 'product.product'
-    // 5. method (String): 'search_read'
-    // 6. args (Array/List): [[domain], [fields], 0, 50]
     const products = await executeJsonRpc<Array<{
       id: number;
       name?: string;
@@ -1594,20 +2107,21 @@ export async function searchGlobalProductsForCustomAudit(
         'product.product',
         'search_read',
         searchReadArgs,
-      ]
+      ],
+      { context: companyContext }
     );
 
     if (!products || products.length === 0) {
       return [];
     }
 
-    // Buscar existencias asociadas en stock.quant para cada producto (también con exactamente 6 args posicionales)
+    // Buscar existencias asociadas en stock.quant para cada producto filtrando estrictamente por FV GRUPO EMPRESARIAL, C.A.
     const productIds = products.map((p) => p.id);
     const quantsMap = new Map<number, { id: number; location_id: any; quantity: number }>();
 
     try {
       const quantArgs = [
-        [['product_id', 'in', productIds], ['location_id.usage', '=', 'internal']],
+        [['product_id', 'in', productIds], ['location_id.usage', '=', 'internal'], ['company_id', '=', compId]],
         ['id', 'product_id', 'location_id', 'quantity'],
         0,
         200,
@@ -1629,7 +2143,8 @@ export async function searchGlobalProductsForCustomAudit(
           'stock.quant',
           'search_read',
           quantArgs,
-        ]
+        ],
+        { context: companyContext }
       );
 
       if (quants && quants.length > 0) {
@@ -1639,7 +2154,7 @@ export async function searchGlobalProductsForCustomAudit(
             quantsMap.set(pId, { ...q });
           } else {
             const existing = quantsMap.get(pId)!;
-            existing.quantity = (existing.quantity || 0) + (q.quantity || 0);
+            existing.quantity = Math.round(((existing.quantity || 0) + (q.quantity || 0)) * 1000) / 1000;
           }
         }
       }
@@ -1660,12 +2175,13 @@ export async function searchGlobalProductsForCustomAudit(
         id: quant ? quant.id : (p.id + 100000),
         productId: p.id,
         productName: p.display_name || p.name || `Producto #${p.id}`,
-        defaultCode: cleanCode(p.default_code || ''),
-        barcode: p.barcode ? String(p.barcode) : '',
+        defaultCode: cleanCode(p.default_code),
+        barcode: cleanCode(p.barcode),
         locationId,
         locationName,
         categId,
         categName,
+        companyId: compId,
         quantity: systemQty,
         inventoryQuantity: 0,
         countedQuantity: 0,

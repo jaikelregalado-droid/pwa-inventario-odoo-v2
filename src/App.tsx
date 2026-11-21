@@ -40,7 +40,8 @@ import {
   fetchLocations,
   getDemoFVGrupoData,
   ensureAuthenticatedUid,
-  lookupGlobalProductInOdoo
+  lookupGlobalProductInOdoo,
+  syncRealTimeStockFromOdoo
 } from './lib/odoo';
 import {
   subscribeToAuditSession,
@@ -167,6 +168,7 @@ export default function App() {
   const [continuousScanMode, setContinuousScanMode] = useState<boolean>(true);
   const [focusedQuantId, setFocusedQuantId] = useState<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const lastAutoSyncedPinRef = useRef<string | null>(null);
 
   // Modales
   const [showOdooModal, setShowOdooModal] = useState<boolean>(false);
@@ -272,7 +274,96 @@ export default function App() {
     }
   };
 
-  // REQUISITO 2: Sincronización Manual Masiva hacia Supabase
+  // Función auxiliar para preservar ediciones locales más recientes realizadas mientras corre una consulta en vivo
+  const preserveNewerInMemoryEdits = (freshItems: QuantItem[], latestInMemory: QuantItem[]): QuantItem[] => {
+    if (!latestInMemory || latestInMemory.length === 0) return freshItems;
+
+    const latestByProduct = new Map<number, QuantItem>();
+    const latestById = new Map<number, QuantItem>();
+    for (const it of latestInMemory) {
+      if (it.productId > 0) latestByProduct.set(it.productId, it);
+      latestById.set(it.id, it);
+    }
+
+    return freshItems.map((fresh) => {
+      const latest = (fresh.productId > 0 ? latestByProduct.get(fresh.productId) : undefined) || latestById.get(fresh.id);
+      if (!latest) return fresh;
+
+      const freshTime = fresh.lastAuditedAt ? new Date(fresh.lastAuditedAt).getTime() : 0;
+      const latestTime = latest.lastAuditedAt ? new Date(latest.lastAuditedAt).getTime() : 0;
+
+      if (latestTime > freshTime) {
+        const counted = Number(latest.countedQuantity || 0);
+        const sysQty = latest.isLocked ? latest.quantity : fresh.quantity;
+        return {
+          ...fresh,
+          quantity: sysQty,
+          countedQuantity: counted,
+          difference: Math.round((counted - sysQty) * 1000) / 1000,
+          isLocked: latest.isLocked ?? fresh.isLocked,
+          lastAuditedBy: latest.lastAuditedBy || fresh.lastAuditedBy,
+          lastAuditedAt: latest.lastAuditedAt,
+          countHistory: latest.countHistory || fresh.countHistory,
+          photoUrl: latest.photoUrl || fresh.photoUrl,
+          notes: latest.notes || fresh.notes,
+        };
+      }
+      return fresh;
+    });
+  };
+
+  // Refresca en segundo plano el stock.quant en vivo desde Odoo 17 para "FV GRUPO EMPRESARIAL, C.A."
+  const refreshLiveOdooStockInBackground = async (
+    cfg: OdooConnectionConfig,
+    activeSession: AuditSession,
+    baseItems: QuantItem[]
+  ) => {
+    if (!navigator.onLine || isDemoMode || !cfg || !activeSession) return;
+    try {
+      const isCustomInv = Boolean(localStorage.getItem(`odoo_audit_custom_inventory_${activeSession.pin}`));
+      const targetCats = !isCustomInv
+        ? (activeSession.categoryIds && activeSession.categoryIds.length > 0
+            ? activeSession.categoryIds
+            : (activeSession.categoryId ? [activeSession.categoryId] : undefined))
+        : undefined;
+
+      const odooSyncResult = await syncRealTimeStockFromOdoo(cfg, baseItems, {
+        locationId: activeSession.locationId,
+        categoryIds: targetCats,
+        isCustomInventory: isCustomInv,
+      });
+
+      if (cfg.companyId !== odooSyncResult.companyId || cfg.companyName !== odooSyncResult.companyName) {
+        setOdooConfig((prev) => prev ? { ...prev, companyId: odooSyncResult.companyId, companyName: odooSyncResult.companyName } : prev);
+        setSession((prev) => prev ? { ...prev, companyId: odooSyncResult.companyId, companyName: odooSyncResult.companyName } : prev);
+      }
+
+      const remoteCounts = await fetchSessionCountsFromSupabase(activeSession.pin).catch(() => []);
+      const withRemote = applyRemoteCountsToItems(odooSyncResult.items, remoteCounts, {
+        preserveLocalSystemQty: true,
+        preferNewerTimestamp: true,
+      });
+
+      let resolvedFinal: QuantItem[] = withRemote;
+      setItems((latest) => {
+        resolvedFinal = preserveNewerInMemoryEdits(withRemote, latest);
+        return resolvedFinal;
+      });
+
+      saveOfflineCatalog(activeSession.pin, resolvedFinal);
+      if (isCustomInv) {
+        try {
+          localStorage.setItem(`odoo_audit_custom_inventory_${activeSession.pin}`, JSON.stringify(resolvedFinal));
+        } catch {}
+      }
+
+      await saveAuditItemsToSupabase(activeSession.pin, resolvedFinal, activeSession.auditorName);
+    } catch (bgErr) {
+      console.warn('Aviso en actualización de stock en vivo de Odoo en segundo plano:', bgErr);
+    }
+  };
+
+  // REQUISITO: Sincronización Manual y Refresco en Tiempo Real desde Odoo 17 ("FV GRUPO EMPRESARIAL, C.A.") + Supabase
   const handleManualSync = async () => {
     if (!session) return;
     if (isManualSyncing) return;
@@ -281,11 +372,23 @@ export default function App() {
     setManualSyncNotice(null);
 
     try {
-      // 1. Obtener los conteos locales más recientes (en memoria y catálogo offline)
+      // 1. Obtener el listado base actual (memoria, catálogo offline o inventario personalizado)
       const offlineItems = loadOfflineCatalog(session.pin) || [];
-      const currentItems = items.length > 0 ? items : offlineItems;
+      let customItems: QuantItem[] = [];
+      const customRaw = localStorage.getItem(`odoo_audit_custom_inventory_${session.pin}`);
+      if (customRaw) {
+        try {
+          const parsed = JSON.parse(customRaw);
+          if (Array.isArray(parsed)) customItems = parsed;
+        } catch {}
+      }
+      let workingItems: QuantItem[] = items.length > 0
+        ? [...items]
+        : (offlineItems.length > 0 ? [...offlineItems] : [...customItems]);
 
-      if (currentItems.length === 0) {
+      const canQueryOdooLive = navigator.onLine && !isDemoMode && Boolean(odooConfig);
+
+      if (workingItems.length === 0 && !canQueryOdooLive) {
         sound.playError();
         setManualSyncNotice({
           type: 'error',
@@ -295,38 +398,120 @@ export default function App() {
         return;
       }
 
-      // 2. Realizar UPSERT masivo directo en 'audit_items' asegurando cantidades reales y PIN
-      const result = await syncAllCountsToSupabase(session.pin, currentItems, session.auditorName);
+      // 2. Consultar en tiempo real existencias actuales (stock.quant) en Odoo 17
+      // filtrando estrictamente por "FV GRUPO EMPRESARIAL, C.A." sin reutilizar lecturas cacheadas
+      let odooSynced = false;
+      let qsUpdatedCount = 0;
+      let newProductsAdded = 0;
+      let verifiedCompanyName = session.companyName || 'FV GRUPO EMPRESARIAL, C.A.';
+      let odooSyncError: string | null = null;
+
+      if (canQueryOdooLive && odooConfig) {
+        try {
+          const isCustomInv = Boolean(customRaw && customItems.length > 0);
+          const sessionCats = !isCustomInv
+            ? (session.categoryIds && session.categoryIds.length > 0
+                ? session.categoryIds
+                : (session.categoryId ? [session.categoryId] : undefined))
+            : undefined;
+
+          const odooSyncResult = await syncRealTimeStockFromOdoo(odooConfig, workingItems, {
+            locationId: session.locationId,
+            categoryIds: sessionCats,
+            isCustomInventory: isCustomInv,
+          });
+
+          workingItems = odooSyncResult.items;
+          odooSynced = true;
+          qsUpdatedCount = odooSyncResult.qsUpdatedCount;
+          newProductsAdded = odooSyncResult.newProductsAdded;
+          verifiedCompanyName = odooSyncResult.companyName;
+
+          if (
+            odooConfig.companyId !== odooSyncResult.companyId ||
+            odooConfig.companyName !== odooSyncResult.companyName
+          ) {
+            setOdooConfig((prev) =>
+              prev ? { ...prev, companyId: odooSyncResult.companyId, companyName: odooSyncResult.companyName } : prev
+            );
+            setSession((prev) =>
+              prev ? { ...prev, companyId: odooSyncResult.companyId, companyName: odooSyncResult.companyName } : prev
+            );
+          }
+        } catch (odooErr: any) {
+          odooSyncError = odooErr?.message || String(odooErr);
+          console.warn('Error consultando stock.quant en tiempo real desde Odoo 17:', odooErr);
+          if (workingItems.length === 0) {
+            sound.playError();
+            setManualSyncNotice({
+              type: 'error',
+              message: `No se pudo consultar stock en vivo desde Odoo 17: ${odooSyncError}`,
+            });
+            setIsManualSyncing(false);
+            return;
+          }
+        }
+      }
+
+      // 3. Traer conteos remotos de Supabase y fusionar SIN sobrescribir el QS fresco traído de Odoo
+      if (navigator.onLine) {
+        try {
+          const refreshed = await fetchSessionCountsFromSupabase(session.pin);
+          if (refreshed.length > 0) {
+            workingItems = applyRemoteCountsToItems(workingItems, refreshed, {
+              preserveLocalSystemQty: odooSynced,
+              preferNewerTimestamp: true,
+            });
+          }
+        } catch (rErr) {
+          console.warn('Aviso obteniendo conteos remotos de Supabase durante sync manual:', rErr);
+        }
+      }
+
+      // Preservar cualquier edición realizada mientras se consultaba Odoo
+      workingItems = preserveNewerInMemoryEdits(workingItems, items);
+
+      // 4. Sobrescribir inmediatamente el caché local (Estado React, LocalStorage + IndexedDB, e inventario personalizado)
+      setItems(workingItems);
+      saveOfflineCatalog(session.pin, workingItems);
+      if (customRaw) {
+        try {
+          localStorage.setItem(`odoo_audit_custom_inventory_${session.pin}`, JSON.stringify(workingItems));
+        } catch {}
+      }
+
+      // 5. Realizar UPSERT masivo hacia Supabase para sobrescribir system_quantity (QS) y asegurar conteos reales
+      const result = await syncAllCountsToSupabase(session.pin, workingItems, session.auditorName);
 
       if (result.success) {
         sound.playSuccess();
         clearPendingCounts(session.pin);
         setPendingSyncCount(0);
 
-        // Refrescar y fusionar conteos de Supabase para confirmar paridad total
-        try {
-          const refreshed = await fetchSessionCountsFromSupabase(session.pin);
-          if (refreshed.length > 0) {
-            setItems((prev) => applyRemoteCountsToItems(prev, refreshed));
-          }
-        } catch (rErr) {
-          console.warn('Aviso refrescando conteos tras sync manual:', rErr);
-        }
+        const qsSummary = qsUpdatedCount > 0 || newProductsAdded > 0
+          ? ` (${qsUpdatedCount} QS actualizado(s)${newProductsAdded > 0 ? `, ${newProductsAdded} nuevo(s)` : ''})`
+          : ' (QS al día con Odoo)';
 
         setManualSyncNotice({
           type: 'success',
-          message: `✓ Sincronización manual completada con éxito: ${result.syncedCount} producto(s) sincronizado(s) con Supabase bajo el PIN ${session.pin}.`,
+          message: odooSynced
+            ? `✓ Stock en vivo actualizado (${verifiedCompanyName}): ${result.syncedCount} producto(s)${qsSummary}.`
+            : odooSyncError
+            ? `⚠️ Conteos respaldados en Supabase (${result.syncedCount}), pero Odoo no respondió en vivo: ${odooSyncError}`
+            : `✓ Sincronización completada: ${result.syncedCount} producto(s) sincronizado(s) bajo PIN ${session.pin}.`,
           count: result.syncedCount,
         });
 
         setTimeout(() => {
           setManualSyncNotice((prev) => (prev?.type === 'success' ? null : prev));
-        }, 6000);
+        }, 7000);
       } else {
         sound.playError();
         setManualSyncNotice({
           type: 'error',
-          message: `Error al sincronizar con Supabase: ${result.error || 'Fallo desconocido'}. Verifica tu conexión.`,
+          message: odooSynced
+            ? `Stock actualizado localmente desde Odoo (${verifiedCompanyName}), pero falló guardado en Supabase: ${result.error || 'Error de red'}`
+            : `Error al sincronizar con Supabase: ${result.error || 'Fallo desconocido'}. Verifica tu conexión.`,
         });
       }
     } catch (err: any) {
@@ -343,7 +528,11 @@ export default function App() {
   // REQUISITO 3: Función auxiliar para fusionar conteos remotos de Supabase en una lista de QuantItem
   const applyRemoteCountsToItems = (
     baseItems: QuantItem[],
-    remoteCounts: RealtimeCountUpdate[]
+    remoteCounts: RealtimeCountUpdate[],
+    options?: {
+      preserveLocalSystemQty?: boolean;
+      preferNewerTimestamp?: boolean;
+    }
   ): QuantItem[] => {
     if (!remoteCounts || remoteCounts.length === 0) return baseItems;
 
@@ -357,21 +546,47 @@ export default function App() {
     return baseItems.map((item) => {
       const remote = prodMap.get(item.productId) || quantMap.get(item.id);
       if (remote) {
-        const counted = Number(remote.countedQuantity);
-        const sysQty = remote.systemQuantity !== undefined && remote.systemQuantity !== null
-          ? Number(remote.systemQuantity)
-          : item.quantity;
+        let useRemoteCount = true;
+        if (options?.preferNewerTimestamp) {
+          const localAudited = Boolean(item.lastAuditedAt);
+          const remoteAudited = Boolean(remote.timestamp);
+          if (localAudited && !remoteAudited) {
+            useRemoteCount = false;
+          } else if (localAudited && remoteAudited) {
+            const locTime = new Date(item.lastAuditedAt!).getTime();
+            const remTime = new Date(remote.timestamp!).getTime();
+            if (locTime >= remTime) {
+              useRemoteCount = false;
+            }
+          } else if (!remoteAudited && Number(item.countedQuantity || 0) > 0 && Number(remote.countedQuantity || 0) === 0) {
+            useRemoteCount = false;
+          }
+        }
+
+        const effectiveCounted = useRemoteCount ? Number(remote.countedQuantity) : Number(item.countedQuantity || 0);
+        const effectiveLocked = useRemoteCount ? (remote.isLocked ?? item.isLocked) : item.isLocked;
+
+        let sysQty = item.quantity;
+        if (!options?.preserveLocalSystemQty) {
+          if (remote.systemQuantity !== undefined && remote.systemQuantity !== null) {
+            sysQty = Number(remote.systemQuantity);
+          }
+        } else if (effectiveLocked && !item.isLocked && remote.systemQuantity !== undefined && remote.systemQuantity !== null) {
+          sysQty = Number(remote.systemQuantity);
+        }
+
         return {
           ...item,
+          barcode: item.barcode || remote.barcode || '',
           quantity: sysQty,
-          countedQuantity: counted,
-          difference: Math.round((counted - sysQty) * 1000) / 1000,
-          isLocked: remote.isLocked ?? item.isLocked,
-          lastAuditedBy: remote.auditorName || item.lastAuditedBy,
-          lastAuditedAt: remote.timestamp || item.lastAuditedAt,
-          countHistory: remote.countHistory && remote.countHistory.length > 0 ? remote.countHistory : item.countHistory,
-          photoUrl: remote.photoUrl || item.photoUrl,
-          notes: remote.notes || item.notes,
+          countedQuantity: effectiveCounted,
+          difference: Math.round((effectiveCounted - sysQty) * 1000) / 1000,
+          isLocked: effectiveLocked,
+          lastAuditedBy: useRemoteCount ? (remote.auditorName || item.lastAuditedBy) : item.lastAuditedBy,
+          lastAuditedAt: useRemoteCount ? (remote.timestamp || item.lastAuditedAt) : item.lastAuditedAt,
+          countHistory: useRemoteCount && remote.countHistory && remote.countHistory.length > 0 ? remote.countHistory : item.countHistory,
+          photoUrl: useRemoteCount ? (remote.photoUrl || item.photoUrl) : item.photoUrl,
+          notes: useRemoteCount ? (remote.notes || item.notes) : item.notes,
         };
       }
       return item;
@@ -457,6 +672,7 @@ export default function App() {
 
     const activePin = session?.pin || localStorage.getItem('odoo_audit_active_pin');
     let hasLocalData = false;
+    let customLocalItems: QuantItem[] | null = null;
 
     // REQUISITO OFFLINE: Verificar almacenamiento local PRIMERO (Inventario Personalizado o Catálogo en LocalStorage)
     // para evitar pantallas en blanco y spinner eterno ante fallos de red
@@ -466,6 +682,7 @@ export default function App() {
         try {
           const parsedCustom = JSON.parse(customRaw);
           if (Array.isArray(parsedCustom) && parsedCustom.length > 0) {
+            customLocalItems = parsedCustom;
             setItems(parsedCustom);
             hasLocalData = true;
             if (!navigator.onLine) {
@@ -535,7 +752,7 @@ export default function App() {
                   ...item,
                   quantity: effectiveSysQty,
                   countedQuantity: remote.countedQuantity,
-                  difference: remote.countedQuantity - effectiveSysQty,
+                  difference: Math.round((remote.countedQuantity - effectiveSysQty) * 1000) / 1000,
                   isLocked,
                   countHistory: remote.countHistory !== undefined ? remote.countHistory : item.countHistory,
                   lastAuditedBy: remote.auditorName,
@@ -571,8 +788,19 @@ export default function App() {
         await ensureAuthenticatedUid(cfg);
       }
 
-      // Consulta de 100% de productos filtrados por categ_id con operador 'in' sin truncar a 500
-      const quantsData = await fetchQuants(cfg, locId, targetCatIds);
+      let quantsData: QuantItem[];
+      const isRefreshingCustomInventory = Boolean(customLocalItems && customLocalItems.length > 0 && !catId && targetCatIds.length === 0);
+
+      if (isRefreshingCustomInventory && customLocalItems) {
+        const customSync = await syncRealTimeStockFromOdoo(cfg, customLocalItems, {
+          locationId: locId,
+          isCustomInventory: true,
+        });
+        quantsData = customSync.items;
+      } else {
+        // Consulta en vivo de 100% de productos en stock.quant filtrados estrictamente por "FV GRUPO EMPRESARIAL, C.A."
+        quantsData = await fetchQuants(cfg, locId, targetCatIds);
+      }
 
       // Si habían productos inmovilizados (is_locked) en la sesión actual, proteger su QS
       if (items.length > 0) {
@@ -586,7 +814,7 @@ export default function App() {
           if (lockedMap.has(item.productId)) {
             item.isLocked = true;
             item.quantity = lockedMap.get(item.productId)!;
-            item.difference = item.countedQuantity - item.quantity;
+            item.difference = Math.round((item.countedQuantity - item.quantity) * 1000) / 1000;
           }
         }
       }
@@ -615,7 +843,10 @@ export default function App() {
                     item.quantity = remote.systemQuantity;
                   }
                 }
-                item.difference = remote.countedQuantity - item.quantity;
+                if (!item.barcode && remote.barcode) {
+                  item.barcode = remote.barcode;
+                }
+                item.difference = Math.round((remote.countedQuantity - item.quantity) * 1000) / 1000;
                 if (remote.countHistory) item.countHistory = remote.countHistory;
                 item.lastAuditedBy = remote.auditorName;
                 item.lastAuditedAt = remote.timestamp;
@@ -631,16 +862,19 @@ export default function App() {
 
       setItems(quantsData);
 
-      // REQUISITO: Carga e inserta automáticamente todos los productos pertenecientes a esas categorías combinadas
-      // dentro de la tabla 'audit_items' en Supabase bajo el mismo PIN de auditoría.
+      // Sobrescribir en almacenamiento local y en Supabase con el QS fresco de Odoo
       if (activePin && quantsData.length > 0) {
         try {
           await saveAuditItemsToSupabase(activePin, quantsData, session?.auditorName);
         } catch (saveErr) {
           console.warn('Aviso guardando lote de productos en audit_items de Supabase:', saveErr);
         }
-        // Persistir en almacenamiento local para modo offline
         saveOfflineCatalog(activePin, quantsData);
+        if (isRefreshingCustomInventory) {
+          try {
+            localStorage.setItem(`odoo_audit_custom_inventory_${activePin}`, JSON.stringify(quantsData));
+          } catch {}
+        }
       }
 
       if (quantsData.length === 0) {
@@ -712,23 +946,53 @@ export default function App() {
         setIsCategoryModalOpen(false);
         if (items.length === 0) {
           (async () => {
-            const remoteCounts = await fetchSessionCountsFromSupabase(session.pin);
+            const remoteCounts = await fetchSessionCountsFromSupabase(session.pin).catch(() => []);
+            let initialLocal: QuantItem[] | null = null;
+
             if (offlineCatalog && offlineCatalog.length > 0) {
-              const merged = applyRemoteCountsToItems(offlineCatalog, remoteCounts);
-              setItems(merged);
+              initialLocal = applyRemoteCountsToItems(offlineCatalog, remoteCounts, { preferNewerTimestamp: true });
+              setItems(initialLocal);
+            } else if (customRaw) {
+              try {
+                const parsedCustom = JSON.parse(customRaw);
+                if (Array.isArray(parsedCustom) && parsedCustom.length > 0) {
+                  initialLocal = applyRemoteCountsToItems(parsedCustom, remoteCounts, { preferNewerTimestamp: true });
+                  setItems(initialLocal);
+                }
+              } catch {}
             } else if (hasCategories) {
+              lastAutoSyncedPinRef.current = session.pin;
               const catFilter = session.categoryIds && session.categoryIds.length > 0
                 ? session.categoryIds
                 : session.categoryId;
               loadInventoryData(odooConfig, session.locationId, isDemoMode, catFilter, remoteCounts);
+              return;
             } else {
               const supaItems = await fetchAuditItemsAsQuantItems(session.pin);
               if (supaItems.length > 0) {
-                const merged = applyRemoteCountsToItems(supaItems, remoteCounts);
-                setItems(merged);
+                initialLocal = applyRemoteCountsToItems(supaItems, remoteCounts, { preferNewerTimestamp: true });
+                setItems(initialLocal);
               }
             }
+
+            if (
+              initialLocal &&
+              initialLocal.length > 0 &&
+              navigator.onLine &&
+              !isDemoMode &&
+              lastAutoSyncedPinRef.current !== session.pin
+            ) {
+              lastAutoSyncedPinRef.current = session.pin;
+              refreshLiveOdooStockInBackground(odooConfig, session, initialLocal);
+            }
           })();
+        } else if (
+          navigator.onLine &&
+          !isDemoMode &&
+          lastAutoSyncedPinRef.current !== session.pin
+        ) {
+          lastAutoSyncedPinRef.current = session.pin;
+          refreshLiveOdooStockInBackground(odooConfig, session, items);
         }
         return;
       }
@@ -1228,6 +1492,8 @@ export default function App() {
   const handleLogout = () => {
     sound.playScan();
     // Limpiar estados activos de la sesión actual
+    lastAutoSyncedPinRef.current = null;
+    setManualSyncNotice(null);
     setSession(null);
     setItems([]);
     setSearchQuery('');
@@ -1380,21 +1646,29 @@ export default function App() {
 
             if (initialCustomItems && initialCustomItems.length > 0) {
               // Cargar directamente los productos elegidos y fusionar conteos reales de Supabase
-              const merged = applyRemoteCountsToItems(initialCustomItems, effectiveCounts);
+              const merged = applyRemoteCountsToItems(initialCustomItems, effectiveCounts, { preferNewerTimestamp: true });
               setItems(merged);
               saveOfflineCatalog(newSession.pin, merged);
               setIsCategoryModalOpen(false);
+              if (navigator.onLine && !isDemo) {
+                lastAutoSyncedPinRef.current = newSession.pin;
+                refreshLiveOdooStockInBackground(config, newSession, merged);
+              }
               return;
             }
 
             // ACCESO DIRECTO AUTOMÁTICO POR PIN:
-            // Si ya existe catálogo offline para este PIN, fusionar conteos de Supabase y reflejarlos de inmediato
+            // Si ya existe catálogo offline para este PIN, fusionar conteos de Supabase y refrescar QS en vivo desde Odoo
             const existingOffline = loadOfflineCatalog(newSession.pin);
             if (existingOffline && existingOffline.length > 0) {
-              const merged = applyRemoteCountsToItems(existingOffline, effectiveCounts);
+              const merged = applyRemoteCountsToItems(existingOffline, effectiveCounts, { preferNewerTimestamp: true });
               setItems(merged);
               saveOfflineCatalog(newSession.pin, merged);
               setIsCategoryModalOpen(false);
+              if (navigator.onLine && !isDemo) {
+                lastAutoSyncedPinRef.current = newSession.pin;
+                refreshLiveOdooStockInBackground(config, newSession, merged);
+              }
               return;
             }
 
@@ -1404,10 +1678,14 @@ export default function App() {
               try {
                 const parsed = JSON.parse(savedCustom);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                  const merged = applyRemoteCountsToItems(parsed, effectiveCounts);
+                  const merged = applyRemoteCountsToItems(parsed, effectiveCounts, { preferNewerTimestamp: true });
                   setItems(merged);
                   saveOfflineCatalog(newSession.pin, merged);
                   setIsCategoryModalOpen(false);
+                  if (navigator.onLine && !isDemo) {
+                    lastAutoSyncedPinRef.current = newSession.pin;
+                    refreshLiveOdooStockInBackground(config, newSession, merged);
+                  }
                   return;
                 }
               } catch (e) {
@@ -1419,10 +1697,14 @@ export default function App() {
             try {
               const supaItems = await fetchAuditItemsAsQuantItems(newSession.pin);
               if (supaItems && supaItems.length > 0) {
-                const merged = applyRemoteCountsToItems(supaItems, effectiveCounts);
+                const merged = applyRemoteCountsToItems(supaItems, effectiveCounts, { preferNewerTimestamp: true });
                 setItems(merged);
                 saveOfflineCatalog(newSession.pin, merged);
                 setIsCategoryModalOpen(false);
+                if (navigator.onLine && !isDemo) {
+                  lastAutoSyncedPinRef.current = newSession.pin;
+                  refreshLiveOdooStockInBackground(config, newSession, merged);
+                }
                 return;
               }
             } catch (errSupa) {
@@ -1579,18 +1861,34 @@ export default function App() {
               </strong>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              loadCategoriesOnly(odooConfig, isDemoMode);
-              setIsCategoryModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#7C3AED] hover:text-[#6D28D9] font-medium text-xs transition cursor-pointer active:scale-95 shrink-0 self-end sm:self-auto shadow-xs"
-            title="Cambiar categoría de auditoría"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Cambiar Área</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={handleManualSync}
+              disabled={isManualSyncing}
+              className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border font-semibold text-xs transition cursor-pointer active:scale-95 shadow-xs ${
+                isManualSyncing
+                  ? 'bg-purple-50 border-purple-200 text-[#7C3AED] opacity-80 cursor-wait'
+                  : 'bg-[#F8FAFC] hover:bg-purple-50 border-[#E2E8F0] hover:border-purple-300 text-[#7C3AED] hover:text-[#6D28D9]'
+              }`}
+              title="Consultar stock en tiempo real (stock.quant) desde Odoo 17 para FV GRUPO EMPRESARIAL, C.A."
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isManualSyncing ? 'animate-spin' : ''}`} />
+              <span>{isManualSyncing ? 'Refrescando...' : 'Refrescar'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                loadCategoriesOnly(odooConfig, isDemoMode);
+                setIsCategoryModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-[#7C3AED] hover:text-[#6D28D9] font-medium text-xs transition cursor-pointer active:scale-95 shadow-xs"
+              title="Cambiar categoría de auditoría"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Cambiar Área</span>
+            </button>
+          </div>
         </div>
 
         {/* Barra de Búsqueda, Selector de Ordenamiento y Escáner */}

@@ -984,7 +984,7 @@ export async function saveAuditItemsToSupabase(
     try {
       const { data: existingRows } = await client
         .from('audit_items')
-        .select('product_id, quant_id, counted_quantity, qty, is_locked, auditor_name, updated_at, notes, photo_url')
+        .select('product_id, quant_id, barcode, counted_quantity, qty, is_locked, auditor_name, updated_at, notes, photo_url')
         .eq('pin', pin)
         .range(0, 4999);
 
@@ -1034,7 +1034,7 @@ export async function saveAuditItemsToSupabase(
         product_id: pId,
         quant_id: qId,
         product_name: item.productName || null,
-        barcode: item.barcode || null,
+        barcode: item.barcode || existing?.barcode || null,
         system_quantity: item.quantity,
         counted_quantity: finalCounted, // NUNCA FIJO EN CERO: valor real
         qty: finalCounted,
